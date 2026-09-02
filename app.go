@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"sync"
 	"time"
 
@@ -18,24 +19,44 @@ type App struct {
 
 	mu         sync.Mutex
 	settings   *settings.Store
+	catalog    *audio.Catalog
 	audio      *audio.Player
 	engine     *timer.Engine
 	conference *conference.Controller
+	projectFS  fs.FS
 }
 
-func NewApp() *App {
-	return &App{
-		audio: audio.NewPlayer(),
+func NewApp(projectSounds ...fs.FS) *App {
+	app := &App{}
+	if len(projectSounds) > 0 {
+		app.projectFS = projectSounds[0]
 	}
+	return app
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
-	store, err := settings.NewStore()
+	catalog, err := audio.NewCatalog(a.projectFS)
+	if err != nil {
+		runtime.LogErrorf(ctx, "sound catalog init failed: %v", err)
+		catalog = audio.NewMemoryCatalog(a.projectFS)
+	}
+	a.catalog = catalog
+	a.audio = audio.NewPlayer(catalog)
+
+	defaults := settings.Default()
+	soundDefaults := catalog.Defaults()
+	if soundDefaults.AlertID != "" {
+		defaults.SoundID = soundDefaults.AlertID
+	}
+	defaults.QuestionsSoundID = soundDefaults.QuestionsID
+	defaults.NextSoundID = soundDefaults.NextID
+
+	store, err := settings.NewStoreWithDefaults(defaults)
 	if err != nil {
 		runtime.LogErrorf(ctx, "settings init failed: %v", err)
-		store = settings.NewMemoryStore()
+		store = settings.NewMemoryStoreWithDefaults(defaults)
 	}
 	a.settings = store
 	a.conference = conference.NewController(func(state conference.State) {
@@ -79,6 +100,10 @@ func (a *App) SaveSettings(input settings.Settings) error {
 	if input.TalkMinutes < 0 || input.TalkSeconds < 0 || input.QuestionsMinutes < 0 || input.QuestionsSeconds < 0 {
 		return timer.ErrInvalidDuration
 	}
+	if input.ReminderMinutes < 0 || input.ReminderSeconds < 0 ||
+		input.ReminderMinutes == 0 && input.ReminderSeconds == 0 {
+		return timer.ErrInvalidDuration
+	}
 	if input.Volume < 0 {
 		input.Volume = 0
 	}
@@ -111,13 +136,29 @@ func (a *App) GetAudioDevices() ([]audio.Device, error) {
 }
 
 func (a *App) GetSounds() []audio.Sound {
-	return audio.ListSounds()
+	if a.catalog == nil {
+		return audio.NewMemoryCatalog(a.projectFS).ListSounds()
+	}
+	return a.catalog.ListSounds()
 }
 
 func (a *App) PreviewSound(soundID string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.audio.Preview(soundID)
+}
+
+func (a *App) ImportSound() (audio.Sound, error) {
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Импорт звука",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Аудиофайлы WAV, MP3, OGG", Pattern: "*.wav;*.mp3;*.ogg"},
+		},
+	})
+	if err != nil || path == "" {
+		return audio.Sound{}, err
+	}
+	return a.catalog.ImportFile(path)
 }
 
 func (a *App) GetState() timer.Snapshot {
@@ -166,7 +207,7 @@ func (a *App) TestConferenceSound(soundID string) error {
 	if soundID == "" {
 		soundID = s.SoundID
 	}
-	wav, err := audio.RenderSound(soundID, s.Volume)
+	wav, err := a.catalog.Render(soundID, s.Volume)
 	if err != nil {
 		return err
 	}
@@ -204,14 +245,28 @@ func (a *App) Reset() {
 
 func (a *App) GoToQuestions() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.engine.GoToQuestions()
+	err := a.engine.GoToQuestions()
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	soundID := a.settings.Get().QuestionsSoundID
+	a.mu.Unlock()
+	a.playConferenceCue(soundID)
+	return nil
 }
 
 func (a *App) NextSpeaker() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.engine.NextSpeaker()
+	err := a.engine.NextSpeaker()
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
+	soundID := a.settings.Get().NextSoundID
+	a.mu.Unlock()
+	a.playConferenceCue(soundID)
+	return nil
 }
 
 func (a *App) DismissAlert() {
@@ -225,6 +280,7 @@ func (a *App) timerConfigFromSettings(s settings.Settings) timer.Config {
 	return timer.Config{
 		TalkDuration:      durationFromParts(s.TalkMinutes, s.TalkSeconds),
 		QuestionsDuration: durationFromParts(s.QuestionsMinutes, s.QuestionsSeconds),
+		ReminderInterval:  durationFromParts(s.ReminderMinutes, s.ReminderSeconds),
 	}
 }
 
@@ -247,7 +303,7 @@ func (a *App) handleAlert() {
 		a.mu.Unlock()
 
 		if conferenceController != nil && conferenceController.IsConnected() {
-			wav, err := audio.RenderSound(soundID, settings.Volume)
+			wav, err := a.catalog.Render(soundID, settings.Volume)
 			if err != nil {
 				runtime.LogErrorf(a.ctx, "conference sound rendering failed: %v", err)
 			} else if err := conferenceController.PlaySound(wav); err != nil {
@@ -262,4 +318,21 @@ func (a *App) handleAlert() {
 	runtime.WindowUnminimise(a.ctx)
 	runtime.WindowShow(a.ctx)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
+}
+
+func (a *App) playConferenceCue(soundID string) {
+	if soundID == "" || a.conference == nil || !a.conference.IsConnected() {
+		return
+	}
+	settings := a.settings.Get()
+	wav, err := a.catalog.Render(soundID, settings.Volume)
+	if err != nil {
+		runtime.LogErrorf(a.ctx, "conference cue rendering failed: %v", err)
+		return
+	}
+	go func() {
+		if err := a.conference.PlaySound(wav); err != nil {
+			runtime.LogErrorf(a.ctx, "conference cue playback failed: %v", err)
+		}
+	}()
 }

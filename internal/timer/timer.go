@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const ReminderInterval = 2 * time.Minute
+const DefaultReminderInterval = 2 * time.Minute
 
 type Phase string
 
@@ -21,18 +21,19 @@ const (
 type Config struct {
 	TalkDuration      time.Duration
 	QuestionsDuration time.Duration
+	ReminderInterval  time.Duration
 }
 
 type Snapshot struct {
-	Phase             Phase `json:"phase"`
-	IsRunning         bool  `json:"isRunning"`
-	IsPaused          bool  `json:"isPaused"`
-	RemainingSeconds  int   `json:"remainingSeconds"`
-	OvertimeSeconds   int   `json:"overtimeSeconds"`
-	TalkSeconds       int   `json:"talkSeconds"`
-	QuestionsSeconds  int   `json:"questionsSeconds"`
-	NextReminderIn    int   `json:"nextReminderIn"`
-	AlertActive       bool  `json:"alertActive"`
+	Phase            Phase `json:"phase"`
+	IsRunning        bool  `json:"isRunning"`
+	IsPaused         bool  `json:"isPaused"`
+	RemainingSeconds int   `json:"remainingSeconds"`
+	OvertimeSeconds  int   `json:"overtimeSeconds"`
+	TalkSeconds      int   `json:"talkSeconds"`
+	QuestionsSeconds int   `json:"questionsSeconds"`
+	NextReminderIn   int   `json:"nextReminderIn"`
+	AlertActive      bool  `json:"alertActive"`
 }
 
 type AlertEvent struct {
@@ -65,9 +66,9 @@ type Engine struct {
 
 func NewEngine(cfg Config) *Engine {
 	return &Engine{
-		clock: realClock{},
-		cfg:   cfg,
-		phase: PhaseIdle,
+		clock:  realClock{},
+		cfg:    normalizeConfig(cfg),
+		phase:  PhaseIdle,
 		stopCh: make(chan struct{}),
 	}
 }
@@ -88,7 +89,10 @@ func (e *Engine) SetCallbacks(onState func(Snapshot), onAlert func(AlertEvent)) 
 func (e *Engine) UpdateConfig(cfg Config) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.cfg = cfg
+	e.cfg = normalizeConfig(cfg)
+	if e.isOvertimePhaseLocked() && !e.lastAlertAt.IsZero() {
+		e.reminderDueAt = e.lastAlertAt.Add(e.cfg.ReminderInterval)
+	}
 	e.emitLocked()
 }
 
@@ -270,7 +274,7 @@ func (e *Engine) enterOvertimeLocked(overtime Phase, now time.Time) {
 
 func (e *Engine) fireAlertLocked(now time.Time, repeated bool) {
 	e.lastAlertAt = now
-	e.reminderDueAt = now.Add(ReminderInterval)
+	e.reminderDueAt = now.Add(e.cfg.ReminderInterval)
 	e.alertActive = true
 	if e.onAlert != nil {
 		event := AlertEvent{Phase: e.phase, Repeated: repeated}
@@ -278,6 +282,13 @@ func (e *Engine) fireAlertLocked(now time.Time, repeated bool) {
 		e.onAlert(event)
 		e.mu.Lock()
 	}
+}
+
+func normalizeConfig(cfg Config) Config {
+	if cfg.ReminderInterval <= 0 {
+		cfg.ReminderInterval = DefaultReminderInterval
+	}
+	return cfg
 }
 
 func (e *Engine) isOvertimePhaseLocked() bool {

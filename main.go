@@ -12,8 +12,14 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// Project sounds are compiled into the application. Add WAV, MP3, or OGG
+// files to sounds/ before building; names can also select cue defaults.
+//
+//go:embed sounds
+var projectSounds embed.FS
+
 func main() {
-	app := NewApp()
+	app := NewApp(projectSounds)
 
 	err := wails.Run(&options.App{
 		Title:     "Таймер докладов",

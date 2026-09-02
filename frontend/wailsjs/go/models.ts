@@ -17,6 +17,7 @@ export namespace audio {
 	export class Sound {
 	    id: string;
 	    label: string;
+	    source: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Sound(source);
@@ -26,6 +27,7 @@ export namespace audio {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
 	        this.label = source["label"];
+	        this.source = source["source"];
 	    }
 	}
 
@@ -79,7 +81,11 @@ export namespace settings {
 	    talkSeconds: number;
 	    questionsMinutes: number;
 	    questionsSeconds: number;
+	    reminderMinutes: number;
+	    reminderSeconds: number;
 	    soundId: string;
+	    questionsSoundId: string;
+	    nextSoundId: string;
 	    deviceId: string;
 	    volume: number;
 	
@@ -93,7 +99,11 @@ export namespace settings {
 	        this.talkSeconds = source["talkSeconds"];
 	        this.questionsMinutes = source["questionsMinutes"];
 	        this.questionsSeconds = source["questionsSeconds"];
+	        this.reminderMinutes = source["reminderMinutes"];
+	        this.reminderSeconds = source["reminderSeconds"];
 	        this.soundId = source["soundId"];
+	        this.questionsSoundId = source["questionsSoundId"];
+	        this.nextSoundId = source["nextSoundId"];
 	        this.deviceId = source["deviceId"];
 	        this.volume = source["volume"];
 	    }

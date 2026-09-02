@@ -27,6 +27,8 @@ export function GetState():Promise<timer.Snapshot>;
 
 export function GoToQuestions():Promise<void>;
 
+export function ImportSound():Promise<audio.Sound>;
+
 export function NextSpeaker():Promise<void>;
 
 export function Pause():Promise<void>;

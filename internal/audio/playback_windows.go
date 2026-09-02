@@ -19,10 +19,10 @@ func playWAV(deviceID string, wav []byte) error {
 
 	pcm := append([]byte(nil), wav[44:]...)
 	format := &wca.WAVEFORMATEX{
-		WFormatTag:      wca.WAVE_FORMAT_PCM,
-		NChannels:       binary.LittleEndian.Uint16(wav[22:24]),
-		NSamplesPerSec:  binary.LittleEndian.Uint32(wav[24:28]),
-		WBitsPerSample:  binary.LittleEndian.Uint16(wav[34:36]),
+		WFormatTag:     wca.WAVE_FORMAT_PCM,
+		NChannels:      binary.LittleEndian.Uint16(wav[22:24]),
+		NSamplesPerSec: binary.LittleEndian.Uint32(wav[24:28]),
+		WBitsPerSample: binary.LittleEndian.Uint16(wav[34:36]),
 	}
 	if format.NChannels == 0 || format.WBitsPerSample == 0 || format.NSamplesPerSec == 0 {
 		return fmt.Errorf("invalid wav format")

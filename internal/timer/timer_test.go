@@ -8,7 +8,8 @@ import (
 func testConfig() Config {
 	return Config{
 		TalkDuration:      10 * time.Minute,
-		QuestionsDuration:   5 * time.Minute,
+		QuestionsDuration: 5 * time.Minute,
+		ReminderInterval:  2 * time.Minute,
 	}
 }
 
@@ -60,6 +61,43 @@ func TestOvertimeRepeatsEveryTwoMinutes(t *testing.T) {
 
 	if len(alerts) != 2 || !alerts[1].Repeated {
 		t.Fatalf("expected repeated alert, got %+v", alerts)
+	}
+}
+
+func TestOvertimeUsesConfiguredReminderInterval(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	cfg := testConfig()
+	cfg.ReminderInterval = 35 * time.Second
+	engine := NewEngineWithClock(cfg, clock)
+
+	var alerts []AlertEvent
+	engine.SetCallbacks(nil, func(event AlertEvent) {
+		alerts = append(alerts, event)
+	})
+
+	_ = engine.Start()
+	clock.Advance(10 * time.Minute)
+	engine.tick()
+
+	clock.Advance(34 * time.Second)
+	engine.tick()
+	if len(alerts) != 1 {
+		t.Fatalf("reminder fired too early: %+v", alerts)
+	}
+
+	clock.Advance(time.Second)
+	engine.tick()
+	if len(alerts) != 2 || !alerts[1].Repeated {
+		t.Fatalf("configured reminder did not fire: %+v", alerts)
+	}
+}
+
+func TestInvalidReminderFallsBackToDefault(t *testing.T) {
+	cfg := testConfig()
+	cfg.ReminderInterval = 0
+	engine := NewEngine(cfg)
+	if engine.cfg.ReminderInterval != DefaultReminderInterval {
+		t.Fatalf("unexpected reminder fallback: %v", engine.cfg.ReminderInterval)
 	}
 }
 

@@ -6,12 +6,12 @@ import {
   DismissAlert,
   DisconnectConference,
   GetAudioDevices,
-  GetConferencePlatforms,
   GetConferenceState,
   GetSettings,
   GetSounds,
   GetState,
   GoToQuestions,
+  ImportSound,
   NextSpeaker,
   Pause,
   PreviewSound,
@@ -45,6 +45,7 @@ interface AudioDevice {
 interface SoundOption {
   id: string;
   label: string;
+  source?: string;
 }
 
 interface ConferenceState {
@@ -54,11 +55,6 @@ interface ConferenceState {
   message: string;
   tested: boolean;
   updatedAt: number;
-}
-
-interface ConferencePlatform {
-  id: string;
-  label: string;
 }
 
 const initialConferenceState: ConferenceState = {
@@ -119,7 +115,11 @@ function App() {
   const [talkSecondsPart, setTalkSecondsPart] = useState(0);
   const [questionsMinutes, setQuestionsMinutes] = useState(5);
   const [questionsSecondsPart, setQuestionsSecondsPart] = useState(0);
+  const [reminderMinutes, setReminderMinutes] = useState(2);
+  const [reminderSecondsPart, setReminderSecondsPart] = useState(0);
   const [soundId, setSoundId] = useState('chime');
+  const [questionsSoundId, setQuestionsSoundId] = useState('');
+  const [nextSoundId, setNextSoundId] = useState('');
   const [deviceId, setDeviceId] = useState('default');
   const [volume, setVolume] = useState(0.85);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -127,10 +127,10 @@ function App() {
   const [conferenceUrl, setConferenceUrl] = useState('');
   const [conferenceName, setConferenceName] = useState('Таймер');
   const [conferenceState, setConferenceState] = useState<ConferenceState>(initialConferenceState);
-  const [conferencePlatforms, setConferencePlatforms] = useState<ConferencePlatform[]>([]);
   const [conferenceBusy, setConferenceBusy] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [importingSound, setImportingSound] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
 
@@ -144,7 +144,11 @@ function App() {
       talkSeconds: next?.talkSeconds ?? talkSecondsPart,
       questionsMinutes: next?.questionsMinutes ?? questionsMinutes,
       questionsSeconds: next?.questionsSeconds ?? questionsSecondsPart,
+      reminderMinutes: next?.reminderMinutes ?? reminderMinutes,
+      reminderSeconds: next?.reminderSeconds ?? reminderSecondsPart,
       soundId: next?.soundId ?? soundId,
+      questionsSoundId: next?.questionsSoundId ?? questionsSoundId,
+      nextSoundId: next?.nextSoundId ?? nextSoundId,
       deviceId: next?.deviceId ?? deviceId,
       volume: next?.volume ?? volume,
     });
@@ -162,7 +166,11 @@ function App() {
     deviceId,
     questionsMinutes,
     questionsSecondsPart,
+    reminderMinutes,
+    reminderSecondsPart,
     soundId,
+    questionsSoundId,
+    nextSoundId,
     talkMinutes,
     talkSecondsPart,
     volume,
@@ -176,14 +184,12 @@ function App() {
         initialSounds,
         initialDevices,
         initialConference,
-        supportedPlatforms,
       ] = await Promise.all([
         GetState(),
         GetSettings(),
         GetSounds(),
         GetAudioDevices(),
         GetConferenceState(),
-        GetConferencePlatforms(),
       ]);
 
       setSnapshot(initialState as TimerSnapshot);
@@ -191,13 +197,16 @@ function App() {
       setTalkSecondsPart(initialSettings.talkSeconds);
       setQuestionsMinutes(initialSettings.questionsMinutes);
       setQuestionsSecondsPart(initialSettings.questionsSeconds);
+      setReminderMinutes(initialSettings.reminderMinutes);
+      setReminderSecondsPart(initialSettings.reminderSeconds);
       setSoundId(initialSettings.soundId);
+      setQuestionsSoundId(initialSettings.questionsSoundId);
+      setNextSoundId(initialSettings.nextSoundId);
       setDeviceId(initialSettings.deviceId);
       setVolume(initialSettings.volume);
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
-      setConferencePlatforms(supportedPlatforms as ConferencePlatform[]);
       if (!['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(initialConference.phase)) {
         setConnectionPromptOpen(true);
       }
@@ -285,6 +294,24 @@ function App() {
     }
   };
 
+  const handleImportSound = async () => {
+    setImportingSound(true);
+    try {
+      const imported = await ImportSound();
+      if (imported?.id) {
+        const updatedSounds = await GetSounds();
+        setSounds(updatedSounds as SoundOption[]);
+        setSoundId(imported.id);
+        await persistSettings({ soundId: imported.id });
+      }
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setImportingSound(false);
+    }
+  };
+
   const handleConferenceConnect = async () => {
     if (!conferenceUrl.trim()) {
       setError('Укажите HTTPS-ссылку на встречу');
@@ -294,7 +321,7 @@ function App() {
     try {
       const state = await ConnectConference(conferenceUrl.trim(), conferenceName.trim());
       setConferenceState(state as ConferenceState);
-      setConnectionPromptOpen(false);
+      setConnectionPromptOpen(true);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -354,12 +381,15 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'pause' | 'questions' | 'next' | 'settings' | 'close') => {
+  const icon = (name: 'play' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       pause: <><path d="M8 6.5h3v11H8z" /><path d="M14 6.5h3v11h-3z" /></>,
       questions: <><path d="M9.5 9a3 3 0 1 1 4.1 2.8c-1 .4-1.6 1-1.6 2" /><path d="M12 17.5h.01" /></>,
       next: <><path d="m7 6 7 6-7 6V6Z" /><path d="M16 6v12" /></>,
+      reset: <><path d="M4.9 7.5A8 8 0 1 1 4 14" /><path d="M4 4v4h4" /></>,
+      disconnect: <><path d="M8 5v6" /><path d="M16 5v6" /><path d="M6 10h12v2a6 6 0 0 1-12 0v-2Z" /><path d="M12 18v3" /></>,
+      upload: <><path d="M12 16V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" /><path d="M5 14v5h14v-5" /></>,
       settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
       close: <><path d="m7 7 10 10" /><path d="M17 7 7 17" /></>,
     };
@@ -434,17 +464,20 @@ function App() {
         </section>
 
         <nav className="controls" aria-label="Управление таймером">
-          <button className="icon-button primary" onClick={handleStart} disabled={snapshot.isRunning && !snapshot.isPaused} aria-label="Запустить" title="Запустить">
+          <button className="icon-button control-play" onClick={handleStart} disabled={snapshot.isRunning && !snapshot.isPaused} aria-label="Запустить" title="Запустить">
             {icon('play')}
           </button>
-          <button className="icon-button" onClick={() => Pause()} disabled={!snapshot.isRunning || snapshot.isPaused} aria-label="Пауза" title="Пауза">
+          <button className="icon-button control-pause" onClick={() => Pause()} disabled={!snapshot.isRunning || snapshot.isPaused} aria-label="Пауза" title="Пауза">
             {icon('pause')}
           </button>
-          <button className="icon-button" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
+          <button className="icon-button control-questions" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
             {icon('questions')}
           </button>
-          <button className="icon-button" onClick={handleNextSpeaker} disabled={snapshot.phase !== 'questions' && snapshot.phase !== 'questionsOvertime'} aria-label="Следующий докладчик" title="Следующий докладчик">
+          <button className="icon-button control-next" onClick={handleNextSpeaker} disabled={snapshot.phase !== 'questions' && snapshot.phase !== 'questionsOvertime'} aria-label="Следующий докладчик" title="Следующий докладчик">
             {icon('next')}
+          </button>
+          <button className="icon-button control-reset" onClick={handleReset} aria-label="Сбросить таймер" title="Сбросить таймер">
+            {icon('reset')}
           </button>
         </nav>
 
@@ -463,22 +496,49 @@ function App() {
               {icon('close')}
             </button>
             <span className="modal-kicker">ВКС</span>
-            <h2 id="connection-title">{conferenceActive ? 'Участник подключается' : 'Подключиться к встрече?'}</h2>
+            <h2 id="connection-title">Подключение к ВКС</h2>
             <p className="modal-copy">{conferenceState.message}</p>
             {!conferenceActive && connectionForm}
-            <div className="modal-actions">
-              {!conferenceActive ? (
-                <>
-                  <button className="text-button secondary" onClick={() => setConnectionPromptOpen(false)}>Пропустить</button>
-                  <button className="text-button primary" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
-                </>
-              ) : (
-                <>
-                  {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
-                    <button className="text-button secondary" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
-                  )}
-                  <button className="text-button danger" disabled={conferenceBusy} onClick={handleConferenceDisconnect}>Отключить</button>
-                </>
+            <div className="connection-footer">
+              <div className={`modal-actions${conferenceActive ? ' conference-active-actions' : ''}`}>
+                {!conferenceActive ? (
+                  <>
+                    <button className="text-button secondary" onClick={() => setConnectionPromptOpen(false)}>Пропустить</button>
+                    <button className="text-button primary" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
+                  </>
+                ) : (
+                  <>
+                    {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
+                      <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
+                    )}
+                    <div className="conference-icon-actions">
+                      <button
+                        className="icon-button conference-test-button"
+                        disabled={!conferenceJoined || conferenceBusy}
+                        onClick={handleConferenceTest}
+                        aria-label="Проверить звук в ВКС"
+                        title="Проверить звук в ВКС"
+                      >
+                        {icon('play')}
+                      </button>
+                      <button
+                        className="icon-button conference-disconnect-button"
+                        disabled={conferenceBusy}
+                        onClick={handleConferenceDisconnect}
+                        aria-label="Отключиться от ВКС"
+                        title="Отключиться"
+                      >
+                        {icon('disconnect')}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+              {conferenceActive && (
+                <div className={`conference-test-state ${conferenceState.tested ? 'is-ready' : ''}`}>
+                  <span className="connection-dot" />
+                  {conferenceState.tested ? 'Звук проверен' : 'Проверьте звук перед запуском'}
+                </div>
               )}
             </div>
           </section>
@@ -503,32 +563,41 @@ function App() {
                 <input type="number" min={0} max={60} value={questionsMinutes} disabled={settingsLocked} onChange={(e) => setQuestionsMinutes(Number(e.target.value))} onBlur={() => persistSettings()} /><span>мин</span>
                 <input type="number" min={0} max={59} value={questionsSecondsPart} disabled={settingsLocked} onChange={(e) => setQuestionsSecondsPart(Number(e.target.value))} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
-              <button className="text-button secondary full-width" onClick={handleReset}>Сбросить таймер</button>
+              <label>Повтор сигнала при просрочке<div className="duration-inputs">
+                <input type="number" min={0} max={60} value={reminderMinutes} disabled={settingsLocked} onChange={(e) => setReminderMinutes(Number(e.target.value))} onBlur={() => persistSettings()} /><span>мин</span>
+                <input type="number" min={0} max={59} value={reminderSecondsPart} disabled={settingsLocked} onChange={(e) => setReminderSecondsPart(Number(e.target.value))} onBlur={() => persistSettings()} /><span>сек</span>
+              </div></label>
             </div>
 
             <div className="settings-section">
               <h3>Звук</h3>
-              <label>Сигнал<select value={soundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setSoundId(next); await persistSettings({ soundId: next }); }}>
+              <label>Сигнал окончания времени<div className="sound-picker-row">
+                <select value={soundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setSoundId(next); await persistSettings({ soundId: next }); }}>
+                  {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+                </select>
+                <button className="icon-button sound-preview-button" onClick={handlePreview} aria-label="Прослушать выбранный сигнал" title="Прослушать">
+                  {icon('play')}
+                </button>
+              </div></label>
+              <label>«Время вопросов» в ВКС<select value={questionsSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setQuestionsSoundId(next); await persistSettings({ questionsSoundId: next }); }}>
+                <option value="">Выключено</option>
+                {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+              </select></label>
+              <label>«Следующий докладчик» в ВКС<select value={nextSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setNextSoundId(next); await persistSettings({ nextSoundId: next }); }}>
+                <option value="">Выключено</option>
                 {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
               </select></label>
               <label>Громкость<input type="range" min={0} max={1} step={0.05} value={volume} disabled={settingsLocked} onChange={(e) => setVolume(Number(e.target.value))} onMouseUp={() => persistSettings()} onTouchEnd={() => persistSettings()} /></label>
               <label>Устройство<select value={deviceId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setDeviceId(next); await persistSettings({ deviceId: next }); }}>
                 {devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
               </select></label>
-              <button className="text-button secondary full-width" onClick={handlePreview}>Прослушать сигнал</button>
+              <button className="compact-import-button" disabled={importingSound || settingsLocked} onClick={handleImportSound}>
+                {icon('upload')}
+                {importingSound ? 'Импорт…' : 'Добавить аудио'}
+              </button>
+              <p className="settings-hint">Поддерживаются WAV, MP3 и OGG до 20 МБ и 5 минут.</p>
             </div>
 
-            <div className="settings-section">
-              <div className="section-heading"><h3>Подключение к ВКС</h3><span className={`mini-status conference-${conferenceState.phase}`}>{conferencePhaseLabels[conferenceState.phase]}</span></div>
-              {!conferenceActive && connectionForm}
-              <div className="stack-actions">
-                {!conferenceActive
-                  ? <button className="text-button primary full-width" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
-                  : <button className="text-button danger full-width" disabled={conferenceBusy} onClick={handleConferenceDisconnect}>Отключить</button>}
-                <button className="text-button secondary full-width" disabled={!conferenceJoined || conferenceBusy} onClick={handleConferenceTest}>Проверить звук в ВКС</button>
-              </div>
-              <p className="settings-hint">Поддерживаются {conferencePlatforms.map((platform) => platform.label).join(', ')}.</p>
-            </div>
             <p className="saving-note">{saving ? 'Сохранение…' : 'Изменения сохраняются автоматически'}</p>
           </aside>
         </div>

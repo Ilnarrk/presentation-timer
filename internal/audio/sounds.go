@@ -2,10 +2,26 @@ package audio
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"errors"
+	"fmt"
+	"io/fs"
 	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 )
+
+const (
+	maxImportBytes = 20 << 20
+	maxSoundFrames = 5 * 60 * outputSampleRate
+)
+
+var ErrUnsupportedFormat = errors.New("unsupported audio format")
 
 type Device struct {
 	ID   string `json:"id"`
@@ -13,47 +29,287 @@ type Device struct {
 }
 
 type Sound struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Source string `json:"source"`
 }
 
-var soundCatalog = []Sound{
-	{ID: "chime", Label: "Мягкий звон"},
-	{ID: "bell", Label: "Колокол"},
-	{ID: "beep", Label: "Сигнал"},
-	{ID: "alarm", Label: "Тревога"},
+type Defaults struct {
+	AlertID     string
+	QuestionsID string
+	NextID      string
+}
+
+type soundData struct {
+	Sound
+	wav []byte
+}
+
+type Catalog struct {
+	mu        sync.RWMutex
+	sounds    map[string]soundData
+	order     []string
+	customDir string
+	defaults  Defaults
+}
+
+func NewCatalog(projectFS fs.FS) (*Catalog, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	customDir := filepath.Join(dir, "presentation-timer", "sounds")
+	if err := os.MkdirAll(customDir, 0o755); err != nil {
+		return nil, err
+	}
+	catalog := newCatalog(customDir)
+	catalog.loadProject(projectFS)
+	catalog.loadCustom()
+	return catalog, nil
+}
+
+func NewMemoryCatalog(projectFS fs.FS) *Catalog {
+	catalog := newCatalog("")
+	catalog.loadProject(projectFS)
+	return catalog
+}
+
+func newCatalog(customDir string) *Catalog {
+	c := &Catalog{
+		sounds:    make(map[string]soundData),
+		customDir: customDir,
+	}
+	for _, builtin := range builtinSounds() {
+		c.add(builtin)
+	}
+	return c
+}
+
+func (c *Catalog) ListSounds() []Sound {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]Sound, 0, len(c.order))
+	for _, id := range c.order {
+		out = append(out, c.sounds[id].Sound)
+	}
+	return out
+}
+
+func (c *Catalog) Defaults() Defaults {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.defaults
+}
+
+func (c *Catalog) Render(soundID string, volume float64) ([]byte, error) {
+	c.mu.RLock()
+	sound, ok := c.sounds[soundID]
+	c.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("sound %q not found", soundID)
+	}
+	return applyWAVVolume(sound.wav, volume), nil
+}
+
+func (c *Catalog) ImportFile(path string) (Sound, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return Sound{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return Sound{}, errors.New("selected sound is not a regular file")
+	}
+	if info.Size() > maxImportBytes {
+		return Sound{}, fmt.Errorf("sound exceeds %d MiB limit", maxImportBytes>>20)
+	}
+
+	wav, err := normalizeAudioFile(path)
+	if err != nil {
+		return Sound{}, err
+	}
+	sum := sha256.Sum256(wav)
+	id := fmt.Sprintf("custom:%x", sum[:10])
+	label := strings.TrimSpace(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	if label == "" {
+		label = "Импортированный звук"
+	}
+	sound := soundData{
+		Sound: Sound{ID: id, Label: label, Source: "custom"},
+		wav:   wav,
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing, ok := c.sounds[id]; ok {
+		return existing.Sound, nil
+	}
+	if c.customDir == "" {
+		return Sound{}, errors.New("custom sound storage is unavailable")
+	}
+	if err := os.WriteFile(filepath.Join(c.customDir, strings.TrimPrefix(id, "custom:")+".wav"), wav, 0o644); err != nil {
+		return Sound{}, err
+	}
+	c.addLocked(sound)
+	return sound.Sound, nil
+}
+
+func (c *Catalog) loadProject(projectFS fs.FS) {
+	if projectFS == nil {
+		return
+	}
+	var loaded []soundData
+	_ = fs.WalkDir(projectFS, "sounds", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !supportedExtension(path) {
+			return nil
+		}
+		data, err := fs.ReadFile(projectFS, path)
+		if err != nil || len(data) > maxImportBytes {
+			return nil
+		}
+		wav, err := normalizeAudio(filepath.Ext(path), data)
+		if err != nil {
+			return nil
+		}
+		relative := strings.TrimPrefix(filepath.ToSlash(path), "sounds/")
+		label := strings.TrimSuffix(filepath.Base(relative), filepath.Ext(relative))
+		loaded = append(loaded, soundData{
+			Sound: Sound{ID: "embedded:" + relative, Label: label, Source: "embedded"},
+			wav:   wav,
+		})
+		return nil
+	})
+	sort.Slice(loaded, func(i, j int) bool { return loaded[i].ID < loaded[j].ID })
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, sound := range loaded {
+		c.addLocked(sound)
+		c.matchProjectDefaultLocked(sound)
+	}
+}
+
+func (c *Catalog) loadCustom() {
+	if c.customDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(c.customDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".wav") {
+			continue
+		}
+		path := filepath.Join(c.customDir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil || len(data) > maxImportBytes*3 {
+			continue
+		}
+		wav, err := normalizeAudio(".wav", data)
+		if err != nil {
+			continue
+		}
+		id := "custom:" + strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		c.add(soundData{
+			Sound: Sound{ID: id, Label: "Импортированный звук " + strings.TrimPrefix(id, "custom:"), Source: "custom"},
+			wav:   wav,
+		})
+	}
+}
+
+func (c *Catalog) matchProjectDefaultLocked(sound soundData) {
+	name := strings.ToLower(strings.TrimSuffix(filepath.Base(sound.ID), filepath.Ext(sound.ID)))
+	name = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(name)
+	switch {
+	case containsAlias(name, "alert", "overtime", "просрочка"):
+		if c.defaults.AlertID == "" {
+			c.defaults.AlertID = sound.ID
+		}
+	case containsAlias(name, "questions", "время вопросов"):
+		if c.defaults.QuestionsID == "" {
+			c.defaults.QuestionsID = sound.ID
+		}
+	case containsAlias(name, "next", "следующий докладчик"):
+		if c.defaults.NextID == "" {
+			c.defaults.NextID = sound.ID
+		}
+	}
+}
+
+func containsAlias(name string, aliases ...string) bool {
+	for _, alias := range aliases {
+		if strings.Contains(name, alias) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Catalog) add(sound soundData) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.addLocked(sound)
+}
+
+func (c *Catalog) addLocked(sound soundData) {
+	if _, exists := c.sounds[sound.ID]; exists {
+		return
+	}
+	c.sounds[sound.ID] = sound
+	c.order = append(c.order, sound.ID)
+}
+
+func builtinSounds() []soundData {
+	return []soundData{
+		{Sound: Sound{ID: "chime", Label: "Мягкий звон", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
+			{freq: 523.25, duration: 180 * time.Millisecond},
+			{freq: 659.25, duration: 220 * time.Millisecond},
+			{freq: 783.99, duration: 280 * time.Millisecond},
+		}, 1)},
+		{Sound: Sound{ID: "bell", Label: "Колокол", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
+			{freq: 880, duration: 180 * time.Millisecond},
+			{freq: 660, duration: 260 * time.Millisecond},
+			{freq: 990, duration: 320 * time.Millisecond},
+		}, 1)},
+		{Sound: Sound{ID: "beep", Label: "Сигнал", Source: "builtin"}, wav: synthesizeTone(1000, 450*time.Millisecond, 1)},
+		{Sound: Sound{ID: "alarm", Label: "Тревога", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
+			{freq: 740, duration: 220 * time.Millisecond},
+			{freq: 0, duration: 80 * time.Millisecond},
+			{freq: 740, duration: 220 * time.Millisecond},
+			{freq: 0, duration: 80 * time.Millisecond},
+			{freq: 740, duration: 220 * time.Millisecond},
+		}, 1)},
+	}
 }
 
 type Player struct {
+	mu       sync.RWMutex
+	catalog  *Catalog
 	deviceID string
 	volume   float64
 }
 
-func NewPlayer() *Player {
-	return &Player{
-		deviceID: "default",
-		volume:   0.85,
+func NewPlayer(catalogs ...*Catalog) *Player {
+	var catalog *Catalog
+	if len(catalogs) > 0 {
+		catalog = catalogs[0]
 	}
+	if catalog == nil {
+		catalog = NewMemoryCatalog(nil)
+	}
+	return &Player{catalog: catalog, deviceID: "default", volume: 0.85}
 }
 
 func (p *Player) SetDevice(deviceID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.deviceID = deviceID
 }
 
 func (p *Player) SetVolume(volume float64) {
-	if volume < 0 {
-		volume = 0
-	}
-	if volume > 1 {
-		volume = 1
-	}
-	p.volume = volume
-}
-
-func ListSounds() []Sound {
-	out := make([]Sound, len(soundCatalog))
-	copy(out, soundCatalog)
-	return out
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.volume = clampVolume(volume)
 }
 
 func (p *Player) Preview(soundID string) error {
@@ -61,23 +317,40 @@ func (p *Player) Preview(soundID string) error {
 }
 
 func (p *Player) Play(soundID string) error {
-	wav, err := renderSound(soundID, p.volume)
+	p.mu.RLock()
+	deviceID, volume := p.deviceID, p.volume
+	p.mu.RUnlock()
+	wav, err := p.catalog.Render(soundID, volume)
 	if err != nil {
 		return err
 	}
-	return playWAV(p.deviceID, wav)
+	return playWAV(deviceID, wav)
 }
 
-// RenderSound returns the same WAV payload used by local playback. Callers can
-// send it to another audio transport, such as a conference MediaStream.
-func RenderSound(soundID string, volume float64) ([]byte, error) {
+func applyWAVVolume(wav []byte, volume float64) []byte {
+	out := append([]byte(nil), wav...)
+	volume = clampVolume(volume)
+	for i := 44; i+1 < len(out); i += 2 {
+		sample := int16(binary.LittleEndian.Uint16(out[i : i+2]))
+		scaled := int(math.Round(float64(sample) * volume))
+		if scaled > math.MaxInt16 {
+			scaled = math.MaxInt16
+		} else if scaled < math.MinInt16 {
+			scaled = math.MinInt16
+		}
+		binary.LittleEndian.PutUint16(out[i:i+2], uint16(int16(scaled)))
+	}
+	return out
+}
+
+func clampVolume(volume float64) float64 {
 	if volume < 0 {
-		volume = 0
+		return 0
 	}
 	if volume > 1 {
-		volume = 1
+		return 1
 	}
-	return renderSound(soundID, volume)
+	return volume
 }
 
 type toneSegment struct {
@@ -85,41 +358,13 @@ type toneSegment struct {
 	duration time.Duration
 }
 
-func renderSound(soundID string, volume float64) ([]byte, error) {
-	switch soundID {
-	case "bell":
-		return synthesizeSequence([]toneSegment{
-			{freq: 880, duration: 180 * time.Millisecond},
-			{freq: 660, duration: 260 * time.Millisecond},
-			{freq: 990, duration: 320 * time.Millisecond},
-		}, volume), nil
-	case "beep":
-		return synthesizeTone(1000, 450*time.Millisecond, volume), nil
-	case "alarm":
-		return synthesizeSequence([]toneSegment{
-			{freq: 740, duration: 220 * time.Millisecond},
-			{freq: 0, duration: 80 * time.Millisecond},
-			{freq: 740, duration: 220 * time.Millisecond},
-			{freq: 0, duration: 80 * time.Millisecond},
-			{freq: 740, duration: 220 * time.Millisecond},
-		}, volume), nil
-	default:
-		return synthesizeSequence([]toneSegment{
-			{freq: 523.25, duration: 180 * time.Millisecond},
-			{freq: 659.25, duration: 220 * time.Millisecond},
-			{freq: 783.99, duration: 280 * time.Millisecond},
-		}, volume), nil
-	}
-}
-
 func synthesizeTone(freq float64, duration time.Duration, volume float64) []byte {
 	return synthesizeSequence([]toneSegment{{freq: freq, duration: duration}}, volume)
 }
 
 func synthesizeSequence(segments []toneSegment, volume float64) []byte {
-	const sampleRate = 44100
+	const sampleRate = outputSampleRate
 	var samples []int16
-
 	for _, segment := range segments {
 		frameCount := int(float64(sampleRate) * segment.duration.Seconds())
 		for i := 0; i < frameCount; i++ {
@@ -129,30 +374,21 @@ func synthesizeSequence(segments []toneSegment, volume float64) []byte {
 				envelope := math.Min(1, math.Min(t*12, (segment.duration.Seconds()-t)*12))
 				sample = math.Sin(2*math.Pi*segment.freq*t) * envelope * volume
 			}
-			if sample > 1 {
-				sample = 1
-			}
-			if sample < -1 {
-				sample = -1
-			}
-			samples = append(samples, int16(sample*math.MaxInt16))
+			samples = append(samples, int16(math.MaxInt16*math.Max(-1, math.Min(1, sample))))
 		}
 	}
-
 	return encodeWAV(samples, sampleRate, 1)
 }
 
-func encodeWAV(samples []int16, sampleRate int, channels int) []byte {
+func encodeWAV(samples []int16, sampleRate, channels int) []byte {
 	data := make([]byte, len(samples)*2)
 	for i, sample := range samples {
 		binary.LittleEndian.PutUint16(data[i*2:], uint16(sample))
 	}
-
 	var buf bytes.Buffer
 	buf.WriteString("RIFF")
 	_ = binary.Write(&buf, binary.LittleEndian, uint32(36+len(data)))
-	buf.WriteString("WAVE")
-	buf.WriteString("fmt ")
+	buf.WriteString("WAVEfmt ")
 	_ = binary.Write(&buf, binary.LittleEndian, uint32(16))
 	_ = binary.Write(&buf, binary.LittleEndian, uint16(1))
 	_ = binary.Write(&buf, binary.LittleEndian, uint16(channels))
@@ -170,17 +406,10 @@ func wavDuration(wav []byte) time.Duration {
 	if len(wav) < 44 {
 		return 0
 	}
-	sampleRate := binary.LittleEndian.Uint32(wav[24:28])
-	channels := binary.LittleEndian.Uint16(wav[22:24])
-	bitsPerSample := binary.LittleEndian.Uint16(wav[34:36])
+	bytesPerSecond := binary.LittleEndian.Uint32(wav[28:32])
 	dataSize := binary.LittleEndian.Uint32(wav[40:44])
-	if sampleRate == 0 || channels == 0 || bitsPerSample == 0 {
-		return 0
-	}
-	bytesPerSecond := sampleRate * uint32(channels) * uint32(bitsPerSample) / 8
 	if bytesPerSecond == 0 {
 		return 0
 	}
-	seconds := float64(dataSize) / float64(bytesPerSecond)
-	return time.Duration(seconds * float64(time.Second))
+	return time.Duration(float64(dataSize) / float64(bytesPerSecond) * float64(time.Second))
 }
