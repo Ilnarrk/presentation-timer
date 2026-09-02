@@ -1,0 +1,44 @@
+build/bin
+node_modules
+frontend/dist
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+dist/
+
+# Build artefacts
+*.syso
+resource.syso
+rsrc_windows_*.syso
+
+# Go / toolchain caches
+*.cover
+*.coverage
+coverage.*
+coverage.html
+profile.cov
+*.prof
+*.pprof
+go.work
+go.work.sum
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+
+
