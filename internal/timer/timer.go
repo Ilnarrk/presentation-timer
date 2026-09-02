@@ -201,7 +201,8 @@ func (e *Engine) NextSpeaker() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.phase != PhaseQuestions && e.phase != PhaseQuestionsOvertime {
+	if e.phase != PhaseTalk && e.phase != PhaseTalkOvertime &&
+		e.phase != PhaseQuestions && e.phase != PhaseQuestionsOvertime {
 		return ErrInvalidTransition
 	}
 	if e.cfg.TalkDuration <= 0 {

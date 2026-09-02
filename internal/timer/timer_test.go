@@ -128,6 +128,22 @@ func TestManualTransitions(t *testing.T) {
 	}
 }
 
+func TestNextSpeakerDirectlyFromTalk(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	clock.Advance(4 * time.Minute)
+	if err := engine.NextSpeaker(); err != nil {
+		t.Fatalf("next speaker from talk: %v", err)
+	}
+
+	snap := engine.Snapshot()
+	if snap.Phase != PhaseTalk || snap.RemainingSeconds != 600 {
+		t.Fatalf("unexpected next speaker snapshot: %+v", snap)
+	}
+}
+
 func TestPausePreservesRemaining(t *testing.T) {
 	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	engine := NewEngineWithClock(testConfig(), clock)
@@ -164,7 +180,6 @@ func TestInvalidTransitions(t *testing.T) {
 		t.Fatalf("expected invalid transition, got %v", err)
 	}
 
-	_ = engine.Start()
 	if err := engine.NextSpeaker(); err != ErrInvalidTransition {
 		t.Fatalf("expected invalid transition, got %v", err)
 	}

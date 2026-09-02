@@ -2,6 +2,16 @@ build/bin
 node_modules
 frontend/dist
 
+sounds/
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.wav.gz
+*.mp3.gz
+*.ogg.gz
+*.flac.gz
+
 # Binaries
 *.exe
 *.exe~

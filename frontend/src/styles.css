@@ -700,6 +700,30 @@ select {
   transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 
+select {
+  appearance: none;
+  padding-right: 38px;
+  border-color: rgba(125, 147, 255, 0.14);
+  background-color: #0a0d14;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #77829b 50%),
+    linear-gradient(135deg, #77829b 50%, transparent 50%);
+  background-position:
+    calc(100% - 17px) 50%,
+    calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+select:hover:not(:disabled) {
+  border-color: rgba(125, 147, 255, 0.34);
+}
+
+select option {
+  background: #111520;
+  color: #e9edfa;
+}
+
 input:focus,
 select:focus {
   border-color: rgba(125, 147, 255, 0.62);
@@ -729,7 +753,7 @@ input[type="range"] {
 }
 
 .conference-active-actions {
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
 }
 
@@ -737,13 +761,15 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-left: auto;
+  margin-inline: auto;
 }
 
 .conference-test-state {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
+  width: 100%;
   margin-top: 12px;
   color: #f1c75e;
   font-size: 0.72rem;
@@ -883,22 +909,33 @@ input[type="range"] {
 
 .sound-picker-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) 34px;
   gap: 8px;
+  align-items: center;
 }
 
 .sound-preview-button {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   border-color: rgba(80, 219, 155, 0.2);
-  background: rgba(48, 191, 128, 0.12);
+  background: rgba(48, 191, 128, 0.09);
   color: #60dfa5;
 }
 
 .sound-preview-button svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
+}
+
+.sound-preview-button.is-playing {
+  opacity: 1;
+  border-color: rgba(80, 219, 155, 0.42);
+  background: rgba(48, 191, 128, 0.18);
+}
+
+.sound-preview-button.is-playing svg {
+  animation: preview-pulse 900ms ease-in-out infinite;
 }
 
 .compact-import-button {
@@ -959,6 +996,10 @@ input[type="range"] {
 
 @keyframes drawer-in {
   from { transform: translateX(30px); opacity: 0; }
+}
+
+@keyframes preview-pulse {
+  50% { opacity: 0.4; transform: scale(0.82); }
 }
 
 @media (max-height: 720px) {

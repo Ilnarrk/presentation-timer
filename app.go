@@ -143,8 +143,6 @@ func (a *App) GetSounds() []audio.Sound {
 }
 
 func (a *App) PreviewSound(soundID string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
 	return a.audio.Preview(soundID)
 }
 

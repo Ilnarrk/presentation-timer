@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveSupportedPlatforms(t *testing.T) {
@@ -58,6 +59,7 @@ type fakeBrowser struct {
 	result any
 	err    error
 	expr   string
+	done   <-chan struct{}
 }
 
 func (f *fakeBrowser) Evaluate(_ context.Context, expression string, result any) error {
@@ -78,10 +80,15 @@ func (f *fakeBrowser) Description() string {
 	return "Тестовый браузер"
 }
 
+func (f *fakeBrowser) Done() <-chan struct{} {
+	return f.done
+}
+
 func TestPlayWAVMarksSuccessfulTest(t *testing.T) {
 	browser := &fakeBrowser{result: true}
 	controller := NewController(nil)
 	controller.browser = browser
+	controller.cancel = func() {}
 	controller.state.update(func(state *State) {
 		state.Phase = PhaseJoined
 	})
@@ -139,6 +146,7 @@ func TestConfirmJoinedRequiresBrowser(t *testing.T) {
 func TestConfirmJoinedChecksMediaBridge(t *testing.T) {
 	controller := NewController(nil)
 	controller.browser = &fakeBrowser{result: true}
+	controller.cancel = func() {}
 	controller.state.update(func(state *State) {
 		state.Phase = PhaseConnecting
 	})
@@ -148,6 +156,60 @@ func TestConfirmJoinedChecksMediaBridge(t *testing.T) {
 	}
 	if state := controller.GetState(); state.Phase != PhaseJoined {
 		t.Fatalf("phase = %q, want joined", state.Phase)
+	}
+}
+
+func TestConfirmJoinedClearsClosedBrowserSession(t *testing.T) {
+	controller := NewController(nil)
+	controller.runID = 7
+	controller.cancel = func() {}
+	controller.browser = &fakeBrowser{err: errors.New("target closed")}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseConnecting
+	})
+
+	if err := controller.ConfirmJoined(); err == nil {
+		t.Fatal("ConfirmJoined() unexpectedly succeeded")
+	}
+	state := controller.GetState()
+	if state.Phase != PhaseError || !strings.Contains(state.Message, "Подключитесь заново") {
+		t.Fatalf("state = %+v, want reconnectable error", state)
+	}
+	if controller.cancel != nil || controller.browser != nil {
+		t.Fatal("closed browser session was not cleared")
+	}
+}
+
+func TestWatchBrowserClearsUnexpectedlyClosedSession(t *testing.T) {
+	done := make(chan struct{})
+	stateChanged := make(chan State, 4)
+	controller := NewController(func(state State) {
+		stateChanged <- state
+	})
+	controller.runID = 3
+	controller.cancel = func() {}
+	controller.browser = &fakeBrowser{result: true, done: done}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseConnecting
+	})
+
+	ctx := context.Background()
+	go controller.watchBrowser(ctx, 3, done)
+	close(done)
+
+	for {
+		select {
+		case state := <-stateChanged:
+			if state.Phase != PhaseError {
+				continue
+			}
+			if controller.cancel != nil || controller.browser != nil {
+				t.Fatal("unexpectedly closed browser session was not cleared")
+			}
+			return
+		case <-time.After(time.Second):
+			t.Fatal("browser closure was not detected")
+		}
 	}
 }
 

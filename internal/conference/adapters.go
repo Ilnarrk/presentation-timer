@@ -15,6 +15,7 @@ var ErrUnsupportedURL = errors.New("ссылка не относится к по
 type Browser interface {
 	Evaluate(ctx context.Context, expression string, result any) error
 	Description() string
+	Done() <-chan struct{}
 }
 
 type Adapter interface {

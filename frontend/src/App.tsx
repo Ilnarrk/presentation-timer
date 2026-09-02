@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './styles.css';
 import {
   ConfirmConferenceJoined,
@@ -131,6 +131,8 @@ function App() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [importingSound, setImportingSound] = useState(false);
+  const [previewingSoundId, setPreviewingSoundId] = useState('');
+  const previewingRef = useRef(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
 
@@ -285,12 +287,18 @@ function App() {
     DismissAlert();
   };
 
-  const handlePreview = async () => {
+  const handlePreview = async (previewSoundId: string) => {
+    if (!previewSoundId || previewingRef.current) return;
+    previewingRef.current = true;
+    setPreviewingSoundId(previewSoundId);
     try {
-      await persistSettings();
-      await PreviewSound(soundId);
+      await PreviewSound(previewSoundId);
+      setError('');
     } catch (err) {
       setError(String(err));
+    } finally {
+      previewingRef.current = false;
+      setPreviewingSoundId('');
     }
   };
 
@@ -352,7 +360,9 @@ function App() {
       setConferenceState(state as ConferenceState);
       setError('');
     } catch (err) {
-      setError(String(err));
+      const state = await GetConferenceState();
+      setConferenceState(state as ConferenceState);
+      setError(state.phase === 'error' && state.message ? state.message : String(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -473,7 +483,7 @@ function App() {
           <button className="icon-button control-questions" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
             {icon('questions')}
           </button>
-          <button className="icon-button control-next" onClick={handleNextSpeaker} disabled={snapshot.phase !== 'questions' && snapshot.phase !== 'questionsOvertime'} aria-label="Следующий докладчик" title="Следующий докладчик">
+          <button className="icon-button control-next" onClick={handleNextSpeaker} disabled={!['talk', 'talkOvertime', 'questions', 'questionsOvertime'].includes(snapshot.phase)} aria-label="Следующий докладчик" title="Следующий докладчик">
             {icon('next')}
           </button>
           <button className="icon-button control-reset" onClick={handleReset} aria-label="Сбросить таймер" title="Сбросить таймер">
@@ -506,35 +516,36 @@ function App() {
                     <button className="text-button secondary" onClick={() => setConnectionPromptOpen(false)}>Пропустить</button>
                     <button className="text-button primary" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
                   </>
+                ) : conferenceJoined ? (
+                  <div className="conference-icon-actions">
+                    <button
+                      className="icon-button conference-test-button"
+                      disabled={conferenceBusy}
+                      onClick={handleConferenceTest}
+                      aria-label="Проверить звук в ВКС"
+                      title="Проверить звук в ВКС"
+                    >
+                      {icon('play')}
+                    </button>
+                    <button
+                      className="icon-button conference-disconnect-button"
+                      disabled={conferenceBusy}
+                      onClick={handleConferenceDisconnect}
+                      aria-label="Отключиться от ВКС"
+                      title="Отключиться"
+                    >
+                      {icon('disconnect')}
+                    </button>
+                  </div>
                 ) : (
                   <>
                     {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
                       <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
                     )}
-                    <div className="conference-icon-actions">
-                      <button
-                        className="icon-button conference-test-button"
-                        disabled={!conferenceJoined || conferenceBusy}
-                        onClick={handleConferenceTest}
-                        aria-label="Проверить звук в ВКС"
-                        title="Проверить звук в ВКС"
-                      >
-                        {icon('play')}
-                      </button>
-                      <button
-                        className="icon-button conference-disconnect-button"
-                        disabled={conferenceBusy}
-                        onClick={handleConferenceDisconnect}
-                        aria-label="Отключиться от ВКС"
-                        title="Отключиться"
-                      >
-                        {icon('disconnect')}
-                      </button>
-                    </div>
                   </>
                 )}
               </div>
-              {conferenceActive && (
+              {conferenceJoined && (
                 <div className={`conference-test-state ${conferenceState.tested ? 'is-ready' : ''}`}>
                   <span className="connection-dot" />
                   {conferenceState.tested ? 'Звук проверен' : 'Проверьте звук перед запуском'}
@@ -575,18 +586,28 @@ function App() {
                 <select value={soundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setSoundId(next); await persistSettings({ soundId: next }); }}>
                   {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
                 </select>
-                <button className="icon-button sound-preview-button" onClick={handlePreview} aria-label="Прослушать выбранный сигнал" title="Прослушать">
+                <button className={`icon-button sound-preview-button${previewingSoundId === soundId ? ' is-playing' : ''}`} disabled={previewingSoundId !== ''} onClick={() => handlePreview(soundId)} aria-label={previewingSoundId === soundId ? 'Сигнал воспроизводится' : 'Прослушать выбранный сигнал'} title={previewingSoundId === soundId ? 'Воспроизводится' : 'Прослушать'}>
                   {icon('play')}
                 </button>
               </div></label>
-              <label>«Время вопросов» в ВКС<select value={questionsSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setQuestionsSoundId(next); await persistSettings({ questionsSoundId: next }); }}>
-                <option value="">Выключено</option>
-                {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
-              </select></label>
-              <label>«Следующий докладчик» в ВКС<select value={nextSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setNextSoundId(next); await persistSettings({ nextSoundId: next }); }}>
-                <option value="">Выключено</option>
-                {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
-              </select></label>
+              <label>«Время вопросов» в ВКС<div className="sound-picker-row">
+                <select value={questionsSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setQuestionsSoundId(next); await persistSettings({ questionsSoundId: next }); }}>
+                  <option value="">Выключено</option>
+                  {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+                </select>
+                <button className={`icon-button sound-preview-button${previewingSoundId === questionsSoundId && questionsSoundId ? ' is-playing' : ''}`} disabled={!questionsSoundId || previewingSoundId !== ''} onClick={() => handlePreview(questionsSoundId)} aria-label={previewingSoundId === questionsSoundId ? 'Звук вопросов воспроизводится' : 'Прослушать звук вопросов'} title={previewingSoundId === questionsSoundId ? 'Воспроизводится' : 'Прослушать'}>
+                  {icon('play')}
+                </button>
+              </div></label>
+              <label>«Следующий докладчик» в ВКС<div className="sound-picker-row">
+                <select value={nextSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setNextSoundId(next); await persistSettings({ nextSoundId: next }); }}>
+                  <option value="">Выключено</option>
+                  {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+                </select>
+                <button className={`icon-button sound-preview-button${previewingSoundId === nextSoundId && nextSoundId ? ' is-playing' : ''}`} disabled={!nextSoundId || previewingSoundId !== ''} onClick={() => handlePreview(nextSoundId)} aria-label={previewingSoundId === nextSoundId ? 'Звук следующего докладчика воспроизводится' : 'Прослушать звук следующего докладчика'} title={previewingSoundId === nextSoundId ? 'Воспроизводится' : 'Прослушать'}>
+                  {icon('play')}
+                </button>
+              </div></label>
               <label>Громкость<input type="range" min={0} max={1} step={0.05} value={volume} disabled={settingsLocked} onChange={(e) => setVolume(Number(e.target.value))} onMouseUp={() => persistSettings()} onTouchEnd={() => persistSettings()} /></label>
               <label>Устройство<select value={deviceId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setDeviceId(next); await persistSettings({ deviceId: next }); }}>
                 {devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}

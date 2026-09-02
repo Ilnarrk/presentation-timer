@@ -86,6 +86,7 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 	joinCtx, joinCancel := context.WithCancel(ctx)
 	c.joinCancel = joinCancel
 	c.mu.Unlock()
+	go c.watchBrowser(ctx, runID, browser.Done())
 
 	progress := func(phase Phase, message string) {
 		c.updateIfCurrent(runID, func(state *State) {
@@ -104,8 +105,8 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 		if !errors.Is(err, context.Canceled) && c.isCurrentRun(runID) {
 			c.fail(err)
 		}
-		browserCancel()
 		c.clearSession(runID)
+		browserCancel()
 		return
 	}
 
@@ -155,8 +156,13 @@ func (c *Controller) ConfirmJoined() error {
 	c.mu.Lock()
 	browser := c.browser
 	joinCancel := c.joinCancel
+	runID := c.runID
 	c.mu.Unlock()
 	if browser == nil {
+		state := c.GetState()
+		if state.Phase == PhaseError && state.Message != "" {
+			return errors.New(state.Message)
+		}
 		return ErrNotJoined
 	}
 
@@ -164,16 +170,23 @@ func (c *Controller) ConfirmJoined() error {
 	defer cancel()
 	var ready bool
 	if err := browser.Evaluate(ctx, `Boolean(window.__presentationTimerBridgeInstalled && window.__timerPlayWav)`, &ready); err != nil {
+		c.failSession(runID, "Окно браузера ВКС закрыто. Подключитесь заново")
 		return fmt.Errorf("не удалось проверить вкладку ВКС: %w", err)
 	}
 	if !ready {
 		return errors.New("аудиомост таймера не найден на открытой странице; обновите страницу и повторите")
 	}
-	c.state.update(func(state *State) {
+	if !c.updateIfCurrent(runID, func(state *State) {
 		state.Phase = PhaseJoined
 		state.Message = "Подключение подтверждено; выполните тест звука"
 		state.Tested = false
-	})
+	}) {
+		state := c.GetState()
+		if state.Message != "" {
+			return errors.New(state.Message)
+		}
+		return ErrNotJoined
+	}
 	if joinCancel != nil {
 		joinCancel()
 	}
@@ -191,6 +204,7 @@ func (c *Controller) PlaySound(wav []byte) error {
 func (c *Controller) playWAV(wav []byte, markTested bool) error {
 	c.mu.Lock()
 	browser := c.browser
+	runID := c.runID
 	c.mu.Unlock()
 	state := c.GetState()
 	if browser == nil || (state.Phase != PhaseJoined && state.Phase != PhasePlaying) {
@@ -213,10 +227,14 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 	)
 	var accepted bool
 	err := browser.Evaluate(ctx, expression, &accepted)
+	if err != nil {
+		c.failSession(runID, "Соединение с браузером ВКС потеряно. Подключитесь заново")
+		return fmt.Errorf("ошибка передачи звука в ВКС: %w", err)
+	}
 
-	c.state.update(func(state *State) {
+	if !c.updateIfCurrent(runID, func(state *State) {
 		state.Phase = PhaseJoined
-		if err != nil || !accepted {
+		if !accepted {
 			state.Message = "Не удалось передать звук"
 			return
 		}
@@ -226,11 +244,14 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 		} else {
 			state.Message = "Сигнал отправлен участникам"
 		}
-	})
-
-	if err != nil {
-		return fmt.Errorf("ошибка передачи звука в ВКС: %w", err)
+	}) {
+		state := c.GetState()
+		if state.Message != "" {
+			return errors.New(state.Message)
+		}
+		return ErrNotJoined
 	}
+
 	if !accepted {
 		return errors.New("страница ВКС не приняла звуковой сигнал")
 	}
@@ -251,6 +272,52 @@ func (c *Controller) fail(err error) {
 	c.state.update(func(state *State) {
 		state.Phase = PhaseError
 		state.Message = err.Error()
+		state.Tested = false
+	})
+}
+
+func (c *Controller) watchBrowser(ctx context.Context, runID uint64, done <-chan struct{}) {
+	if done == nil {
+		return
+	}
+	select {
+	case <-ctx.Done():
+		return
+	case <-done:
+		if ctx.Err() == nil {
+			c.failSession(runID, "Окно браузера ВКС закрыто. Подключитесь заново")
+		}
+	}
+}
+
+func (c *Controller) failSession(runID uint64, message string) {
+	c.mu.Lock()
+	if c.runID != runID || c.cancel == nil {
+		c.mu.Unlock()
+		return
+	}
+	cancel := c.cancel
+	joinCancel := c.joinCancel
+	browserCancel := c.browserCancel
+	c.runID++
+	c.cancel = nil
+	c.joinCancel = nil
+	c.browserCancel = nil
+	c.browser = nil
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if joinCancel != nil {
+		joinCancel()
+	}
+	if browserCancel != nil {
+		browserCancel()
+	}
+	c.state.update(func(state *State) {
+		state.Phase = PhaseError
+		state.Message = message
 		state.Tested = false
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,6 +23,7 @@ const (
 )
 
 var ErrUnsupportedFormat = errors.New("unsupported audio format")
+var ErrPreviewInProgress = errors.New("предпрослушивание уже выполняется")
 
 type Device struct {
 	ID   string `json:"id"`
@@ -42,7 +44,12 @@ type Defaults struct {
 
 type soundData struct {
 	Sound
-	wav []byte
+	wav  []byte
+	path string
+}
+
+type soundMetadata struct {
+	Label string `json:"label"`
 }
 
 type Catalog struct {
@@ -108,7 +115,15 @@ func (c *Catalog) Render(soundID string, volume float64) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("sound %q not found", soundID)
 	}
-	return applyWAVVolume(sound.wav, volume), nil
+	wav := sound.wav
+	if len(wav) == 0 && sound.path != "" {
+		var err error
+		wav, err = os.ReadFile(sound.path)
+		if err != nil {
+			return nil, fmt.Errorf("read sound %q: %w", soundID, err)
+		}
+	}
+	return applyWAVVolume(wav, volume), nil
 }
 
 func (c *Catalog) ImportFile(path string) (Sound, error) {
@@ -141,14 +156,27 @@ func (c *Catalog) ImportFile(path string) (Sound, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if existing, ok := c.sounds[id]; ok {
+		if existing.Source == "custom" && existing.Label != label {
+			existing.Label = label
+			c.sounds[id] = existing
+			_ = writeSoundMetadata(c.customDir, strings.TrimPrefix(id, "custom:"), label)
+		}
 		return existing.Sound, nil
 	}
 	if c.customDir == "" {
 		return Sound{}, errors.New("custom sound storage is unavailable")
 	}
-	if err := os.WriteFile(filepath.Join(c.customDir, strings.TrimPrefix(id, "custom:")+".wav"), wav, 0o644); err != nil {
+	stem := strings.TrimPrefix(id, "custom:")
+	soundPath := filepath.Join(c.customDir, stem+".wav")
+	if err := os.WriteFile(soundPath, wav, 0o644); err != nil {
 		return Sound{}, err
 	}
+	if err := writeSoundMetadata(c.customDir, stem, label); err != nil {
+		_ = os.Remove(soundPath)
+		return Sound{}, err
+	}
+	sound.wav = nil
+	sound.path = soundPath
 	c.addLocked(sound)
 	return sound.Sound, nil
 }
@@ -201,20 +229,32 @@ func (c *Catalog) loadCustom() {
 			continue
 		}
 		path := filepath.Join(c.customDir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil || len(data) > maxImportBytes*3 {
+		info, err := entry.Info()
+		if err != nil || info.Size() < 44 || info.Size() > maxImportBytes*3 {
 			continue
 		}
-		wav, err := normalizeAudio(".wav", data)
-		if err != nil {
-			continue
+		stem := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		label := "Импортированный звук"
+		if data, readErr := os.ReadFile(filepath.Join(c.customDir, stem+".json")); readErr == nil {
+			var metadata soundMetadata
+			if json.Unmarshal(data, &metadata) == nil && strings.TrimSpace(metadata.Label) != "" {
+				label = strings.TrimSpace(metadata.Label)
+			}
 		}
-		id := "custom:" + strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+		id := "custom:" + stem
 		c.add(soundData{
-			Sound: Sound{ID: id, Label: "Импортированный звук " + strings.TrimPrefix(id, "custom:"), Source: "custom"},
-			wav:   wav,
+			Sound: Sound{ID: id, Label: label, Source: "custom"},
+			path:  path,
 		})
 	}
+}
+
+func writeSoundMetadata(dir, stem, label string) error {
+	data, err := json.Marshal(soundMetadata{Label: label})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, stem+".json"), data, 0o644)
 }
 
 func (c *Catalog) matchProjectDefaultLocked(sound soundData) {
@@ -283,10 +323,12 @@ func builtinSounds() []soundData {
 }
 
 type Player struct {
-	mu       sync.RWMutex
-	catalog  *Catalog
-	deviceID string
-	volume   float64
+	mu         sync.RWMutex
+	previewMu  sync.Mutex
+	catalog    *Catalog
+	deviceID   string
+	volume     float64
+	playbackFn func(string, []byte) error
 }
 
 func NewPlayer(catalogs ...*Catalog) *Player {
@@ -297,7 +339,12 @@ func NewPlayer(catalogs ...*Catalog) *Player {
 	if catalog == nil {
 		catalog = NewMemoryCatalog(nil)
 	}
-	return &Player{catalog: catalog, deviceID: "default", volume: 0.85}
+	return &Player{
+		catalog:    catalog,
+		deviceID:   "default",
+		volume:     0.85,
+		playbackFn: playWAV,
+	}
 }
 
 func (p *Player) SetDevice(deviceID string) {
@@ -313,6 +360,10 @@ func (p *Player) SetVolume(volume float64) {
 }
 
 func (p *Player) Preview(soundID string) error {
+	if !p.previewMu.TryLock() {
+		return ErrPreviewInProgress
+	}
+	defer p.previewMu.Unlock()
 	return p.Play(soundID)
 }
 
@@ -324,7 +375,7 @@ func (p *Player) Play(soundID string) error {
 	if err != nil {
 		return err
 	}
-	return playWAV(deviceID, wav)
+	return p.playbackFn(deviceID, wav)
 }
 
 func applyWAVVolume(wav []byte, volume float64) []byte {

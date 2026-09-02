@@ -2,8 +2,10 @@ package audio
 
 import (
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -58,6 +60,22 @@ func TestImportNormalizesToStandardWAV(t *testing.T) {
 		binary.LittleEndian.Uint16(rendered[34:36]) != 16 {
 		t.Fatalf("unexpected normalized WAV format")
 	}
+
+	reloaded := newCatalog(customDir)
+	reloaded.loadCustom()
+	var imported Sound
+	for _, candidate := range reloaded.ListSounds() {
+		if candidate.ID == sound.ID {
+			imported = candidate
+			break
+		}
+	}
+	if imported.Label != "source" {
+		t.Fatalf("expected original filename after reload, got %q", imported.Label)
+	}
+	if len(reloaded.sounds[sound.ID].wav) != 0 || reloaded.sounds[sound.ID].path == "" {
+		t.Fatal("expected imported sound to be loaded lazily")
+	}
 }
 
 func TestRejectsOversizedDuration(t *testing.T) {
@@ -68,5 +86,31 @@ func TestRejectsOversizedDuration(t *testing.T) {
 	}
 	if _, err := normalizePCM(input); err == nil {
 		t.Fatal("expected duration limit error")
+	}
+}
+
+func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
+	player := NewPlayer()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	player.playbackFn = func(string, []byte) error {
+		once.Do(func() { close(started) })
+		<-release
+		return nil
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- player.Preview("chime")
+	}()
+	<-started
+
+	if err := player.Preview("chime"); !errors.Is(err, ErrPreviewInProgress) {
+		t.Fatalf("second Preview() error = %v, want ErrPreviewInProgress", err)
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Preview() error = %v", err)
 	}
 }

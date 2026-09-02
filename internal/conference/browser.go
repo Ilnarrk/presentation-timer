@@ -33,6 +33,10 @@ func (b *chromeBrowser) Description() string {
 	return b.description
 }
 
+func (b *chromeBrowser) Done() <-chan struct{} {
+	return b.ctx.Done()
+}
+
 func openBrowser(parent context.Context, targetURL string) (*chromeBrowser, context.CancelFunc, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
