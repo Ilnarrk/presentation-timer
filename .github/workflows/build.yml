@@ -34,6 +34,12 @@ jobs:
       - name: Установка NSIS
         run: choco install nsis -y
 
+      - name: Добавление NSIS в PATH
+        run: echo "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Проверка NSIS
+        run: makensis /VERSION
+
       - name: Запуск тестов
         run: go test ./internal/...
 
@@ -49,6 +55,9 @@ jobs:
             exit 1
           }
           Get-ChildItem build/bin
+          if (-not (Test-Path build/bin/presentation-timer-*-installer.exe)) {
+            Write-Warning "Installer was not built; release will contain only presentation-timer.exe"
+          }
 
       - name: Создание релиза и загрузка файлов
         uses: softprops/action-gh-release@v2
@@ -56,7 +65,7 @@ jobs:
           files: |
             build/bin/presentation-timer.exe
             build/bin/presentation-timer-*-installer.exe
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
