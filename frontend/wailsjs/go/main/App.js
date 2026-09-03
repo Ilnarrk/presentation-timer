@@ -26,6 +26,10 @@ export function GetAudioDevices() {
   return window['go']['main']['App']['GetAudioDevices']();
 }
 
+export function GetConferenceDiagnostics() {
+  return window['go']['main']['App']['GetConferenceDiagnostics']();
+}
+
 export function GetConferencePlatforms() {
   return window['go']['main']['App']['GetConferencePlatforms']();
 }

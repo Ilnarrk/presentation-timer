@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -114,6 +113,16 @@ var adapters = []Adapter{
 		label:   "МТС Линк",
 		domains: []string{"mts-link.ru", "webinar.ru"},
 	},
+	adapterConfig{
+		id:      "mint",
+		label:   "MINT",
+		domains: []string{"mintconf.ru", "mint.tatneft.tatar"},
+	},
+}
+
+var genericAdapter = adapterConfig{
+	id:    "generic",
+	label: "ВКС (on-prem)",
 }
 
 type Resolved struct {
@@ -131,13 +140,13 @@ func Resolve(rawURL string) (Resolved, error) {
 	if parsed.Scheme != "https" || parsed.Hostname() == "" {
 		return Resolved{}, errors.New("ссылка ВКС должна быть полным HTTPS-адресом")
 	}
-	if net.ParseIP(parsed.Hostname()) != nil || parsed.User != nil {
-		return Resolved{}, errors.New("адрес ВКС не должен содержать IP или данные авторизации")
+	if parsed.User != nil {
+		return Resolved{}, errors.New("адрес ВКС не должен содержать данные авторизации")
 	}
 
+	display := parsed.Scheme + "://" + parsed.Hostname() + parsed.EscapedPath()
 	for _, candidate := range adapters {
 		if candidate.Matches(parsed.Hostname()) {
-			display := parsed.Scheme + "://" + parsed.Hostname() + parsed.EscapedPath()
 			return Resolved{
 				URL:        parsed.String(),
 				DisplayURL: display,
@@ -145,14 +154,38 @@ func Resolve(rawURL string) (Resolved, error) {
 			}, nil
 		}
 	}
-	return Resolved{}, ErrUnsupportedURL
+	if isSpoofedHostname(parsed.Hostname()) {
+		return Resolved{}, ErrUnsupportedURL
+	}
+	return Resolved{
+		URL:        parsed.String(),
+		DisplayURL: display,
+		Adapter:    genericAdapter,
+	}, nil
+}
+
+func isSpoofedHostname(hostname string) bool {
+	host := strings.ToLower(strings.TrimSuffix(hostname, "."))
+	for _, candidate := range adapters {
+		cfg, ok := candidate.(adapterConfig)
+		if !ok {
+			continue
+		}
+		for _, domain := range cfg.domains {
+			if strings.HasPrefix(host, domain+".") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func SupportedPlatforms() []Platform {
-	result := make([]Platform, 0, len(adapters))
+	result := make([]Platform, 0, len(adapters)+1)
 	for _, adapter := range adapters {
 		result = append(result, Platform{ID: adapter.ID(), Label: adapter.Label()})
 	}
+	result = append(result, Platform{ID: genericAdapter.ID(), Label: genericAdapter.Label()})
 	return result
 }
 
@@ -170,9 +203,31 @@ const joinProbeScript = `(async () => {
   const platform = %s;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const frameWindows = () => {
+    const list = [window];
+    const visit = (win) => {
+      try {
+        win.document.querySelectorAll('iframe').forEach((frame) => {
+          try {
+            const child = frame.contentWindow;
+            if (child && !list.includes(child)) {
+              list.push(child);
+              visit(child);
+            }
+          } catch (_) {}
+        });
+      } catch (_) {}
+    };
+    visit(window);
+    return list;
+  };
+  const frameDocuments = () => frameWindows().map((win) => {
+    try { return win.document; } catch (_) { return null; }
+  }).filter(Boolean);
   const visible = (element) => {
     if (!element || element.disabled) return false;
-    const style = getComputedStyle(element);
+    const view = element.ownerDocument?.defaultView || window;
+    const style = view.getComputedStyle(element);
     const rect = element.getBoundingClientRect();
     return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
   };
@@ -184,7 +239,7 @@ const joinProbeScript = `(async () => {
         if (node.shadowRoot) visit(node.shadowRoot);
       });
     };
-    visit(document);
+    frameDocuments().forEach(visit);
     return result;
   };
   const textOf = (element) => normalize([
@@ -206,7 +261,6 @@ const joinProbeScript = `(async () => {
     return true;
   };
   const detectJoined = () => {
-    const pageText = normalize(document.body?.innerText || '');
     const controls = elements('button, [role="button"], [aria-label], [title], [data-testid]')
       .filter((element) => visible(element))
       .map(textOf);
@@ -225,11 +279,12 @@ const joinProbeScript = `(async () => {
       return /имя|фио|name|ник/.test(hint);
     });
     const activeVideos = elements('video').filter((video) => visible(video) && (video.videoWidth > 0 || video.readyState >= 2)).length;
+    const pageText = normalize(frameDocuments().map((doc) => doc.body?.innerText || '').join(' '));
     const inCallText = /вы в конференции|в эфире|встреча началась|connected to meeting|you are in the meeting|ожидание других участников|вы подключились|подключение установлено|в комнате|in the meeting|waiting for others/.test(pageText);
     const prejoinVisible = visibleNameField || visibleJoinButton;
-    const mediaUsed = Boolean(window.__presentationTimerMediaUsed);
-    const peerConnections = Number(window.__timerPeerCount || 0);
-    const mediaReady = Boolean(window.__presentationTimerBridgeInstalled);
+    const mediaUsed = frameWindows().some((win) => Boolean(win.__presentationTimerMediaUsed));
+    const peerConnections = frameWindows().reduce((sum, win) => sum + Number(win.__timerPeerCount || 0), 0);
+    const mediaReady = frameWindows().some((win) => Boolean(win.__presentationTimerBridgeInstalled));
     if (mediaReady && mediaUsed && !prejoinVisible) return true;
     if (mediaReady && peerConnections > 0 && !prejoinVisible) return true;
     if (mediaReady && mediaUsed && meetingControls.length >= 1) return true;
@@ -242,7 +297,7 @@ const joinProbeScript = `(async () => {
   window.__timerJoinAttempts = (window.__timerJoinAttempts || 0) + 1;
   const shouldAct = window.__timerJoinAttempts <= 12;
 
-  const pageText = normalize(document.body?.innerText || '');
+  const pageText = normalize(frameDocuments().map((doc) => doc.body?.innerText || '').join(' '));
   if (/ссылка.*недействительна|встреча.*не найдена|конференция.*не найдена|мероприятие.*завершено|браузер не поддерживается/.test(pageText)) {
     return { joined: false, waiting: false, error: 'Встреча не найдена, завершена или браузер не поддерживается' };
   }

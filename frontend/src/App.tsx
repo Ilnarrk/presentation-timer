@@ -7,6 +7,7 @@ import {
   DisconnectConference,
   GetAppInfo,
   GetAudioDevices,
+  GetConferenceDiagnostics,
   GetConferenceState,
   GetSettings,
   GetSounds,
@@ -21,7 +22,7 @@ import {
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
-import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
+import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
 import { buildinfo, settings, timer } from '../wailsjs/go/models';
 
 type Phase = timer.Snapshot['phase'];
@@ -399,6 +400,23 @@ function App() {
     }
   };
 
+  const handleConferenceDiagnostics = async () => {
+    setConferenceBusy(true);
+    try {
+      const snapshot = await GetConferenceDiagnostics();
+      await ClipboardSetText(snapshot);
+      setError('');
+      setConferenceState({
+        ...conferenceState,
+        message: 'Диагностика скопирована в буфер обмена',
+      });
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setConferenceBusy(false);
+    }
+  };
+
   const phaseDuration = snapshot.phase.startsWith('questions')
     ? questionsMinutes * 60 + questionsSecondsPart
     : talkMinutes * 60 + talkSecondsPart;
@@ -554,11 +572,23 @@ function App() {
                     >
                       {icon('disconnect')}
                     </button>
+                    {import.meta.env.DEV && (
+                      <button
+                        className="text-button secondary compact-button"
+                        disabled={conferenceBusy}
+                        onClick={handleConferenceDiagnostics}
+                      >
+                        Диагностика
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <>
                     {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
                       <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
+                    )}
+                    {import.meta.env.DEV && (
+                      <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceDiagnostics}>Диагностика</button>
                     )}
                   </>
                 )}
@@ -578,7 +608,7 @@ function App() {
         <div className="modal-backdrop drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setSettingsOpen(false)}>
           <aside className="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title">
             <div className="drawer-header">
-              <div><span className="modal-kicker">Параметры</span><h2 id="settings-title">Настройки</h2></div>
+              <div><h2 id="settings-title">Настройки</h2></div>
               <button className="icon-button quiet" aria-label="Закрыть настройки" onClick={() => setSettingsOpen(false)}>{icon('close')}</button>
             </div>
 
@@ -639,9 +669,7 @@ function App() {
 
             <button type="button" className="about-link" onClick={() => setAboutOpen(true)}>
               О программе
-            </button>
-
-            <p className="saving-note">{saving ? 'Сохранение…' : 'Изменения сохраняются автоматически'}</p>
+            </button>            
           </aside>
         </div>
       )}

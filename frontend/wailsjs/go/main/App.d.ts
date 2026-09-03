@@ -18,6 +18,8 @@ export function GetAppInfo():Promise<buildinfo.Info>;
 
 export function GetAudioDevices():Promise<Array<audio.Device>>;
 
+export function GetConferenceDiagnostics():Promise<string>;
+
 export function GetConferencePlatforms():Promise<Array<conference.Platform>>;
 
 export function GetConferenceState():Promise<conference.State>;

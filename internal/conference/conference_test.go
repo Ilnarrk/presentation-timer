@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,10 @@ func TestResolveSupportedPlatforms(t *testing.T) {
 		{"https://company.ktalk.ru/room", "kontur-talk"},
 		{"https://my.mts-link.ru/j/123", "mts-link"},
 		{"https://events.webinar.ru/123", "mts-link"},
+		{"https://mint.tatneft.tatar/meet/6a994cc595725fe897218764", "mint"},
+		{"https://mintconf.ru/meet/abc", "mint"},
+		{"https://jazz.corp.local/room", "generic"},
+		{"https://10.0.0.5/meet/abc", "generic"},
 	}
 
 	for _, test := range tests {
@@ -44,10 +49,8 @@ func TestResolveSupportedPlatforms(t *testing.T) {
 func TestResolveRejectsUnsafeAndUnsupportedURLs(t *testing.T) {
 	for _, rawURL := range []string{
 		"http://telemost.yandex.ru/j/123",
-		"https://example.com/meeting",
 		"https://telemost.yandex.ru.evil.example/j/123",
 		"https://user:password@telemost.yandex.ru/j/123",
-		"https://127.0.0.1/meeting",
 	} {
 		if _, err := Resolve(rawURL); err == nil {
 			t.Fatalf("Resolve(%q) unexpectedly succeeded", rawURL)
@@ -72,6 +75,13 @@ func (f *fakeBrowser) Evaluate(_ context.Context, expression string, result any)
 		*target = f.result.(bool)
 	case *joinProbe:
 		*target = f.result.(joinProbe)
+	case *string:
+		switch value := f.result.(type) {
+		case string:
+			*target = value
+		default:
+			*target = fmt.Sprint(value)
+		}
 	}
 	return nil
 }
@@ -230,21 +240,51 @@ func TestDiscoverBrowserEndpointsUsesSavedEndpoint(t *testing.T) {
 	if err := saveBrowserEndpoint(appDir, server.URL); err != nil {
 		t.Fatalf("saveBrowserEndpoint() error = %v", err)
 	}
-	endpoints := discoverBrowserEndpoints(context.Background(), appDir, "https://telemost.yandex.ru/j/123")
+	endpoints := discoverBrowserEndpoints(context.Background(), appDir, "telemost")
 	if len(endpoints) == 0 || endpoints[0].URL != server.URL {
 		t.Fatalf("endpoints = %v, want saved endpoint first", endpoints)
 	}
 }
 
 func TestBrowserCompatibility(t *testing.T) {
-	saluteURL := "https://salutejazz.ru/room"
-	if browserCompatible("edge", saluteURL) {
+	if browserCompatible("edge", "salutejazz") {
 		t.Fatal("Edge must not be used for SaluteJazz")
 	}
-	if !browserCompatible("chrome", saluteURL) || !browserCompatible("yandex", saluteURL) {
+	if !browserCompatible("chrome", "salutejazz") || !browserCompatible("yandex", "salutejazz") {
 		t.Fatal("Chrome and Yandex Browser must be supported for SaluteJazz")
 	}
-	if !browserCompatible("edge", "https://telemost.yandex.ru/j/123") {
+	if !browserCompatible("edge", "telemost") {
 		t.Fatal("Edge fallback should remain available for other platforms")
+	}
+	if !browserCompatible("edge", "generic") {
+		t.Fatal("Edge should remain available for on-prem platforms")
+	}
+}
+
+func TestGetDiagnosticsRequiresBrowser(t *testing.T) {
+	controller := NewController(nil)
+	if _, err := controller.GetDiagnostics(); !errors.Is(err, ErrNotJoined) {
+		t.Fatalf("GetDiagnostics() error = %v, want ErrNotJoined", err)
+	}
+}
+
+func TestGetDiagnosticsReturnsSnapshot(t *testing.T) {
+	browser := &fakeBrowser{result: `{"peerCount":2,"mediaUsed":true}`}
+	controller := NewController(nil)
+	controller.browser = browser
+	controller.cancel = func() {}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseJoined
+	})
+
+	got, err := controller.GetDiagnostics()
+	if err != nil {
+		t.Fatalf("GetDiagnostics() error = %v", err)
+	}
+	if !strings.Contains(browser.expr, "__timerGetDiagnostics") {
+		t.Fatalf("expression does not request diagnostics: %s", browser.expr)
+	}
+	if !strings.Contains(got, `"peerCount":2`) {
+		t.Fatalf("diagnostics = %s, want snapshot payload", got)
 	}
 }

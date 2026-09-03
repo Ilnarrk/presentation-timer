@@ -22,7 +22,7 @@ func TestBrowserMediaBridgeSmoke(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	browser, closeBrowser, err := openBrowser(ctx, server.URL)
+	browser, closeBrowser, err := openBrowser(ctx, server.URL, "generic")
 	if err != nil {
 		t.Fatalf("openBrowser() error = %v", err)
 	}

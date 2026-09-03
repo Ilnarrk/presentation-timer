@@ -21,11 +21,31 @@ type appConfig struct {
 }
 
 func main() {
-	root := filepath.Join("..")
+	root, err := findProjectRoot()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sync app config: %v\n", err)
+		os.Exit(1)
+	}
 	if err := run(root); err != nil {
 		fmt.Fprintf(os.Stderr, "sync app config: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// findProjectRoot locates the repo root whether the hook runs from the project
+// root (wails build/dev) or from build/ (manual go run).
+func findProjectRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range []string{wd, filepath.Join(wd, "..")} {
+		appPath := filepath.Join(candidate, "build", "app.json")
+		if _, err := os.Stat(appPath); err == nil {
+			return filepath.Clean(candidate), nil
+		}
+	}
+	return "", fmt.Errorf("build/app.json not found from %s", wd)
 }
 
 func run(root string) error {

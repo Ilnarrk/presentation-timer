@@ -3,6 +3,7 @@ package conference
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -66,7 +67,7 @@ func (c *Controller) Connect(rawURL, displayName string) (State, error) {
 }
 
 func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, displayName string) {
-	browser, browserCancel, err := openBrowser(ctx, resolved.URL)
+	browser, browserCancel, err := openBrowser(ctx, resolved.URL, resolved.Adapter.ID())
 	if err != nil {
 		if !errors.Is(err, context.Canceled) && c.isCurrentRun(runID) {
 			c.fail(err)
@@ -191,6 +192,34 @@ func (c *Controller) ConfirmJoined() error {
 		joinCancel()
 	}
 	return nil
+}
+
+func (c *Controller) GetDiagnostics() (string, error) {
+	c.mu.Lock()
+	browser := c.browser
+	c.mu.Unlock()
+	if browser == nil {
+		return "", ErrNotJoined
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var snapshot string
+	if err := browser.Evaluate(ctx, diagnosticsScript, &snapshot); err != nil {
+		return "", fmt.Errorf("не удалось прочитать диагностику ВКС: %w", err)
+	}
+
+	payload := map[string]any{
+		"snapshot": json.RawMessage(snapshot),
+	}
+	if attacher, ok := browser.(interface{ Attachments() []attachedTarget }); ok {
+		payload["attached"] = attacher.Attachments()
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return snapshot, nil
+	}
+	return string(data), nil
 }
 
 func (c *Controller) TestSound(wav []byte) error {

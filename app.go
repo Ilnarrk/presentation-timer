@@ -202,6 +202,13 @@ func (a *App) ConfirmConferenceJoined() error {
 	return a.conference.ConfirmJoined()
 }
 
+func (a *App) GetConferenceDiagnostics() (string, error) {
+	if a.conference == nil {
+		return "", conference.ErrNotJoined
+	}
+	return a.conference.GetDiagnostics()
+}
+
 func (a *App) TestConferenceSound(soundID string) error {
 	if a.conference == nil {
 		return conference.ErrNotJoined
