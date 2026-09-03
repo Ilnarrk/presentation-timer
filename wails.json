@@ -1,8 +1,23 @@
 {
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "presentation-timer",
+  "outputfilename": "presentation-timer",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "build:hooks": {
+    "prebuild": "go run ./build/sync_app_config.go",
+    "predev": "go run ./build/sync_app_config.go"
+  },
   "info": {
     "companyName": "Presentation Timer",
-    "copyright": "Copyright 2026",
     "productName": "Таймер докладов",
-    "productVersion": "0.1.0"
+    "productVersion": "0.1.0",
+    "copyright": "Copyright 2026"
+  },
+  "author": {
+    "name": "ilnarrk",
+    "email": "ilnarrk085@gmail.com"
   }
 }
