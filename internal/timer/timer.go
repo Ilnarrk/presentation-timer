@@ -62,6 +62,7 @@ type Engine struct {
 	stopCh   chan struct{}
 	ticker   *time.Ticker
 	tickerMu sync.Mutex
+	tickerStop chan struct{}
 }
 
 func NewEngine(cfg Config) *Engine {
@@ -376,12 +377,17 @@ func (e *Engine) ensureTickerLocked() {
 	}
 
 	e.ticker = time.NewTicker(200 * time.Millisecond)
+	ticker := e.ticker
+	stop := make(chan struct{})
+	e.tickerStop = stop
 	go func() {
 		for {
 			select {
 			case <-e.stopCh:
 				return
-			case <-e.ticker.C:
+			case <-stop:
+				return
+			case <-ticker.C:
 				e.tick()
 			}
 		}
@@ -391,6 +397,10 @@ func (e *Engine) ensureTickerLocked() {
 func (e *Engine) stopTickerLocked() {
 	e.tickerMu.Lock()
 	defer e.tickerMu.Unlock()
+	if e.tickerStop != nil {
+		close(e.tickerStop)
+		e.tickerStop = nil
+	}
 	if e.ticker != nil {
 		e.ticker.Stop()
 		e.ticker = nil
