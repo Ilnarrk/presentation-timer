@@ -9,10 +9,6 @@ import (
 	"path/filepath"
 )
 
-type wailsConfig struct {
-	Info map[string]interface{} `json:"info"`
-}
-
 type appConfig struct {
 	Name     string `json:"name"`
 	Version  string `json:"version"`
@@ -81,18 +77,21 @@ func syncWailsMetadata(root string, app appConfig) error {
 		return err
 	}
 
-	var wails wailsConfig
+	var wails map[string]interface{}
 	if err := json.Unmarshal(wailsData, &wails); err != nil {
 		return err
 	}
-	if wails.Info == nil {
-		wails.Info = map[string]interface{}{}
+
+	info, _ := wails["info"].(map[string]interface{})
+	if info == nil {
+		info = map[string]interface{}{}
+		wails["info"] = info
 	}
 	if app.Name != "" {
-		wails.Info["productName"] = app.Name
+		info["productName"] = app.Name
 	}
 	if app.Version != "" {
-		wails.Info["productVersion"] = app.Version
+		info["productVersion"] = app.Version
 	}
 
 	out, err := json.MarshalIndent(wails, "", "  ")

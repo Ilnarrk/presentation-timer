@@ -1,5 +1,5 @@
 # Signs Windows binaries with Authenticode (SHA256 + RFC3161 timestamp).
-# Prefer calling this after `wails build --nsis` instead of NSIS !finalize.
+# CI order: wails build -> -ExeOnly -> makensis -> -InstallerOnly
 
 param(
     [Parameter(Mandatory = $true)]
@@ -9,10 +9,16 @@ param(
     [string]$BinDir = "",
     [string]$CerOut = "",
     [string]$TimestampUrl = "http://timestamp.digicert.com",
-    [switch]$ExportOnly
+    [switch]$ExportOnly,
+    [switch]$ExeOnly,
+    [switch]$InstallerOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($ExeOnly -and $InstallerOnly) {
+    throw "Use only one of -ExeOnly or -InstallerOnly"
+}
 
 if (-not $BinDir) {
     $BinDir = Join-Path (Split-Path -Parent $PSScriptRoot) "bin"
@@ -96,50 +102,46 @@ if ($ExportOnly) {
     return
 }
 
-function Get-SignTargets([string]$Dir) {
+function Get-SignTargets([string]$Dir, [bool]$OnlyExe, [bool]$OnlyInstaller) {
     $targets = [System.Collections.Generic.List[string]]::new()
 
-    $primary = Join-Path $Dir "presentation-timer.exe"
-    if (Test-Path -LiteralPath $primary) {
-        $targets.Add((Resolve-Path -LiteralPath $primary).Path)
+    if (-not $OnlyInstaller) {
+        $primary = Join-Path $Dir "presentation-timer.exe"
+        if (Test-Path -LiteralPath $primary) {
+            $targets.Add((Resolve-Path -LiteralPath $primary).Path)
+        } elseif (-not $OnlyExe) {
+            Get-ChildItem -Path $Dir -Filter "presentation-timer*.exe" -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch '-installer\.exe$' } |
+                ForEach-Object { $targets.Add($_.FullName) }
+            $wailsapp = Join-Path $Dir "wailsapp.exe"
+            if ((Test-Path -LiteralPath $wailsapp) -and $targets.Count -eq 0) {
+                $targets.Add((Resolve-Path -LiteralPath $wailsapp).Path)
+            }
+        }
     }
 
-    Get-ChildItem -Path $Dir -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($_.Name -match '-installer\.exe$') {
-            $targets.Add($_.FullName)
-            return
-        }
-        if ($_.Name -like 'presentation-timer*.exe' -and $_.Name -notmatch '-installer\.exe$') {
-            $targets.Add($_.FullName)
-            return
-        }
-        if ($_.Name -eq 'wailsapp.exe') {
-            $targets.Add($_.FullName)
-        }
+    if (-not $OnlyExe) {
+        Get-ChildItem -Path $Dir -Filter "presentation-timer-*-installer.exe" -ErrorAction SilentlyContinue |
+            ForEach-Object { $targets.Add($_.FullName) }
     }
 
     return @($targets | Select-Object -Unique)
 }
 
 $signTool = Find-SignTool
-$targets = Get-SignTargets $BinDir
+$targets = Get-SignTargets -Dir $BinDir -OnlyExe:$ExeOnly -OnlyInstaller:$InstallerOnly
 
 if ($targets.Count -eq 0) {
+    $mode = if ($ExeOnly) { "executable" } elseif ($InstallerOnly) { "installer" } else { "binaries" }
     $hint = @(
-        "No binaries to sign in $BinDir.",
-        "Run: wails build --nsis",
-        "Expected presentation-timer.exe (set `"name`": `"presentation-timer`" in wails.json).",
-        "For the NSIS installer, install NSIS and ensure makensis is on PATH."
+        "No $mode to sign in $BinDir.",
+        "Run: wails build (and makensis for installer).",
+        "Expected presentation-timer.exe (set `"name`": `"presentation-timer`" in wails.json)."
     ) -join "`n"
     throw $hint
 }
 
-$wailsFallback = $targets | Where-Object { $_ -match '\\wailsapp\.exe$' }
-if ($wailsFallback -and -not (Test-Path -LiteralPath (Join-Path $BinDir "presentation-timer.exe"))) {
-    Write-Warning "Signing wailsapp.exe because presentation-timer.exe was not found. Rebuild after adding name to wails.json."
-}
-
-foreach ($file in $targets | Select-Object -Unique) {
+foreach ($file in $targets) {
     Write-Host "Signing $file"
     & $signTool sign /fd SHA256 /f $PfxPath /p $Password /tr $TimestampUrl /td SHA256 $file
     if ($LASTEXITCODE -ne 0) {
@@ -147,5 +149,7 @@ foreach ($file in $targets | Select-Object -Unique) {
     }
 }
 
-Write-PublicCer $CerOut
-Sync-WindowsCer $CerOut
+if (-not $ExeOnly -and -not $InstallerOnly) {
+    Write-PublicCer $CerOut
+    Sync-WindowsCer $CerOut
+}

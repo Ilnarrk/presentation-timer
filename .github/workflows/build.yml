@@ -64,30 +64,31 @@ jobs:
             if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Force }
           }
 
+      - name: Сборка frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Проверка frontend/dist
+        shell: pwsh
+        run: |
+          if (-not (Test-Path frontend/dist/index.html)) {
+            Write-Error "frontend/dist/index.html missing — UI not built"
+            exit 1
+          }
+
       - name: Сборка приложения
         run: wails build --nsis
 
-      - name: Проверка артефактов сборки
-        shell: pwsh
-        run: |
-          if (-not (Test-Path build/bin/presentation-timer.exe)) {
-            Write-Error "presentation-timer.exe not found in build/bin"
-            Get-ChildItem -Recurse build/bin -ErrorAction SilentlyContinue
-            exit 1
-          }
-          Get-ChildItem build/bin
-          if (-not (Test-Path build/bin/presentation-timer-*-installer.exe)) {
-            Write-Warning "Installer was not built; release will contain only presentation-timer.exe"
-          }
-
-      - name: Подпись Authenticode
+      - name: Подпись exe
         shell: pwsh
         env:
           CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
           CODE_SIGN_PFX_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_PASSWORD)) {
-            Write-Warning "CODE_SIGN_PFX_BASE64 / CODE_SIGN_PFX_PASSWORD не заданы; подпись пропущена"
+            Write-Warning "CODE_SIGN_PFX_BASE64 / CODE_SIGN_PFX_PASSWORD не заданы; подпись exe пропущена"
             exit 0
           }
           $tmp = Join-Path $env:RUNNER_TEMP "codesign.pfx"
@@ -98,10 +99,73 @@ jobs:
               -PfxPath $tmp `
               -Password $env:CODE_SIGN_PFX_PASSWORD `
               -BinDir $binDir `
-              -CerOut (Join-Path $binDir "codesign.cer")
+              -ExeOnly
           } finally {
             if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Force }
           }
+
+      - name: Сборка NSIS-инсталлятора
+        shell: pwsh
+        run: |
+          $installerDir = Join-Path $pwd "build/windows/installer"
+          $binary = (Resolve-Path "build/bin/presentation-timer.exe").Path
+          Push-Location $installerDir
+          try {
+            makensis -DARG_WAILS_AMD64_BINARY="$binary" project.nsi
+          } finally {
+            Pop-Location
+          }
+
+      - name: Подпись installer
+        shell: pwsh
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          CODE_SIGN_PFX_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_PASSWORD)) {
+            Write-Warning "CODE_SIGN_PFX_BASE64 / CODE_SIGN_PFX_PASSWORD не заданы; подпись installer пропущена"
+            exit 0
+          }
+          $tmp = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($tmp, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64.Trim()))
+          try {
+            $binDir = (Resolve-Path build/bin).Path
+            & (Join-Path $pwd "build/windows/sign-binaries.ps1") `
+              -PfxPath $tmp `
+              -Password $env:CODE_SIGN_PFX_PASSWORD `
+              -BinDir $binDir `
+              -InstallerOnly
+            if (Test-Path build/windows/codesign.cer) {
+              Copy-Item -LiteralPath build/windows/codesign.cer -Destination (Join-Path $binDir "codesign.cer") -Force
+            }
+          } finally {
+            if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Force }
+          }
+
+      - name: Проверка артефактов сборки
+        shell: pwsh
+        run: |
+          $exe = "build/bin/presentation-timer.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "presentation-timer.exe not found in build/bin"
+            Get-ChildItem -Recurse build/bin -ErrorAction SilentlyContinue
+            exit 1
+          }
+          $minBytes = 8MB
+          $size = (Get-Item $exe).Length
+          if ($size -lt $minBytes) {
+            Write-Error "presentation-timer.exe is too small ($size bytes) — frontend may be missing"
+            exit 1
+          }
+          if (-not (Test-Path build/bin/presentation-timer-*-installer.exe)) {
+            Write-Error "NSIS installer was not built"
+            exit 1
+          }
+          if (-not (Test-Path frontend/dist/index.html)) {
+            Write-Error "frontend/dist/index.html missing after build"
+            exit 1
+          }
+          Get-ChildItem build/bin
 
       - name: SHA256 для описания релиза
         shell: pwsh

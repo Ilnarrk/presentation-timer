@@ -111,6 +111,17 @@ cd ..
 wails build
 ```
 
+Для инсталлятора (нужен NSIS в PATH):
+
+```powershell
+wails build
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExeOnly
+makensis -DARG_WAILS_AMD64_BINARY=..\..\bin\presentation-timer.exe project.nsi
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -InstallerOnly
+```
+
+(команда `makensis` — из каталога `build\windows\installer`)
+
 Wails автоматически:
 
 1. соберёт интерфейс;
@@ -143,12 +154,16 @@ build\bin\presentation-timer-amd64-installer.exe
 powershell -ExecutionPolicy Bypass -File build\windows\create-codesign-cert.ps1
 ```
 
-Будут созданы `build\windows\codesign.pfx` (закрытый ключ, **не коммитить**) и `build\windows\codesign.cer` (публичный). Сначала выгрузите `.cer`, затем соберите инсталлятор, затем подпишите оба exe:
+Будут созданы `build\windows\codesign.pfx` (закрытый ключ, **не коммитить**) и `build\windows\codesign.cer` (публичный). Порядок сборки с подписью:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExportOnly
-wails build --nsis
-powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль"
+wails build
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExeOnly
+cd build\windows\installer
+makensis -DARG_WAILS_AMD64_BINARY=..\..\bin\presentation-timer.exe project.nsi
+cd ..\..\..
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -InstallerOnly
 ```
 
 Нужен [Windows SDK](https://developer.microsoft.com/windows/downloads/windows-sdk/) (`signtool`). Для релизов из GitHub Actions задайте секреты `CODE_SIGN_PFX_BASE64` (Base64 содержимого `.pfx`) и `CODE_SIGN_PFX_PASSWORD`.
@@ -407,11 +422,11 @@ presentation-timer/
 git clone https://github.com/Ilnarrk/presentation-timer.git
 cd presentation-timer
 
-# Сборка и подпись инсталлятора (нужны codesign.pfx / .cer)
-cd frontend && npm install && cd ..
+# Сборка и подпись (нужны codesign.pfx / .cer, NSIS в PATH)
 powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExportOnly
-wails build --nsis
-powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль"
+wails build
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExeOnly
+cd build\windows\installer && makensis -DARG_WAILS_AMD64_BINARY=..\..\bin\presentation-timer.exe project.nsi && cd ..\..\..
 
 # Portable без установки
 .\build\bin\presentation-timer.exe
