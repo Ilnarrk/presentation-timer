@@ -6,6 +6,10 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "build:hooks": {
+    "prebuild": "go run ./build/sync_app_config.go",
+    "predev": "go run ./build/sync_app_config.go"
+  },
   "info": {
     "companyName": "Presentation Timer",
     "productName": "Таймер докладов",

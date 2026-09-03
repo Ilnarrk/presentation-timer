@@ -75,12 +75,13 @@ def main() -> None:
     base.save(appicon, format="PNG")
 
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    icons = [draw_icon(size).resize((size, size), Image.Resampling.LANCZOS) for size, _ in sizes]
-    icons[0].save(
+    icons = [draw_icon(size) for size, _ in sizes]
+    # Pillow ignores ICO sizes larger than the primary image, so save 256x256 first.
+    icons[-1].save(
         icon_ico,
         format="ICO",
         sizes=sizes,
-        append_images=icons[1:],
+        append_images=icons[:-1],
     )
 
     print(f"Wrote {appicon}")

@@ -18,6 +18,10 @@ export function DismissAlert() {
   return window['go']['main']['App']['DismissAlert']();
 }
 
+export function GetAppInfo() {
+  return window['go']['main']['App']['GetAppInfo']();
+}
+
 export function GetAudioDevices() {
   return window['go']['main']['App']['GetAudioDevices']();
 }

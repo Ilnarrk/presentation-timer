@@ -5,6 +5,7 @@ import {
   ConnectConference,
   DismissAlert,
   DisconnectConference,
+  GetAppInfo,
   GetAudioDevices,
   GetConferenceState,
   GetSettings,
@@ -20,8 +21,8 @@ import {
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
-import { EventsOn } from '../wailsjs/runtime/runtime';
-import { settings, timer } from '../wailsjs/go/models';
+import { EventsOn, BrowserOpenURL } from '../wailsjs/runtime/runtime';
+import { buildinfo, settings, timer } from '../wailsjs/go/models';
 
 type Phase = timer.Snapshot['phase'];
 
@@ -35,6 +36,13 @@ interface TimerSnapshot {
   questionsSeconds: number;
   nextReminderIn: number;
   alertActive: boolean;
+}
+
+interface AppInfo {
+  name: string;
+  version: string;
+  url: string;
+  urlLabel: string;
 }
 
 interface AudioDevice {
@@ -134,7 +142,14 @@ function App() {
   const [previewingSoundId, setPreviewingSoundId] = useState('');
   const previewingRef = useRef(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
+  const [appInfo, setAppInfo] = useState<AppInfo>({
+    name: 'Таймер докладов',
+    version: '1.0.0',
+    url: '',
+    urlLabel: '',
+  });
 
   const settingsLocked = snapshot.isRunning;
   const conferenceActive = ['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(conferenceState.phase);
@@ -186,12 +201,14 @@ function App() {
         initialSounds,
         initialDevices,
         initialConference,
+        initialAppInfo,
       ] = await Promise.all([
         GetState(),
         GetSettings(),
         GetSounds(),
         GetAudioDevices(),
         GetConferenceState(),
+        GetAppInfo(),
       ]);
 
       setSnapshot(initialState as TimerSnapshot);
@@ -209,6 +226,7 @@ function App() {
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
+      setAppInfo(buildinfo.Info.createFrom(initialAppInfo));
       if (!['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(initialConference.phase)) {
         setConnectionPromptOpen(true);
       }
@@ -435,7 +453,7 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand-mark">T</div>
+        <span className="app-version" title={appInfo.name}>v{appInfo.version}</span>
         <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
           {icon('settings')}
         </button>
@@ -619,8 +637,34 @@ function App() {
               <p className="settings-hint">Поддерживаются WAV, MP3 и OGG до 20 МБ и 5 минут.</p>
             </div>
 
+            <button type="button" className="about-link" onClick={() => setAboutOpen(true)}>
+              О программе
+            </button>
+
             <p className="saving-note">{saving ? 'Сохранение…' : 'Изменения сохраняются автоматически'}</p>
           </aside>
+        </div>
+      )}
+
+      {aboutOpen && (
+        <div className="modal-backdrop about-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setAboutOpen(false)}>
+          <section className="modal about-modal" role="dialog" aria-modal="true" aria-labelledby="about-title">
+            <button className="icon-button quiet close-button" aria-label="Закрыть" onClick={() => setAboutOpen(false)}>
+              {icon('close')}
+            </button>
+            <span className="modal-kicker">О программе</span>
+            <h2 id="about-title">{appInfo.name}</h2>
+            <p className="about-version">Версия {appInfo.version}</p>
+            {appInfo.url && (
+              <button
+                type="button"
+                className="about-url-link"
+                onClick={() => BrowserOpenURL(appInfo.url)}
+              >
+                {appInfo.urlLabel || appInfo.url}
+              </button>
+            )}
+          </section>
         </div>
       )}
     </div>

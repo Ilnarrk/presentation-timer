@@ -7,6 +7,8 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
+
+	"timer/internal/buildinfo"
 )
 
 //go:embed all:frontend/dist
@@ -20,9 +22,10 @@ var projectSounds embed.FS
 
 func main() {
 	app := NewApp(projectSounds)
+	appInfo := buildinfo.Get()
 
 	err := wails.Run(&options.App{
-		Title:     "Таймер докладов",
+		Title:     appInfo.Name,
 		Width:     960,
 		Height:    720,
 		MinWidth:  820,

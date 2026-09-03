@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"timer/internal/audio"
+	"timer/internal/buildinfo"
 	"timer/internal/conference"
 	"timer/internal/settings"
 	"timer/internal/timer"
@@ -87,6 +88,10 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.conference != nil {
 		a.conference.Disconnect()
 	}
+}
+
+func (a *App) GetAppInfo() buildinfo.Info {
+	return buildinfo.Get()
 }
 
 func (a *App) GetSettings() settings.Settings {

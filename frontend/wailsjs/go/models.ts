@@ -33,6 +33,29 @@ export namespace audio {
 
 }
 
+export namespace buildinfo {
+	
+	export class Info {
+	    name: string;
+	    version: string;
+	    url: string;
+	    urlLabel: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.version = source["version"];
+	        this.url = source["url"];
+	        this.urlLabel = source["urlLabel"];
+	    }
+	}
+
+}
+
 export namespace conference {
 	
 	export class Platform {
