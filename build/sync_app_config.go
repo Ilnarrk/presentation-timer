@@ -10,10 +10,7 @@ import (
 )
 
 type wailsConfig struct {
-	Info struct {
-		ProductName    string `json:"productName"`
-		ProductVersion string `json:"productVersion"`
-	} `json:"info"`
+	Info map[string]interface{} `json:"info"`
 }
 
 type appConfig struct {
@@ -32,6 +29,32 @@ func main() {
 }
 
 func run(root string) error {
+	appPath := filepath.Join(root, "build", "app.json")
+	appData, err := os.ReadFile(appPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", appPath, err)
+	}
+
+	var app appConfig
+	if err := json.Unmarshal(appData, &app); err != nil {
+		return fmt.Errorf("parse %s: %w", appPath, err)
+	}
+
+	out, err := json.MarshalIndent(app, "", "  ")
+	if err != nil {
+		return err
+	}
+	out = append(out, '\n')
+
+	embeddedPath := filepath.Join(root, "internal", "buildinfo", "app.json")
+	if err := os.WriteFile(embeddedPath, out, 0o644); err != nil {
+		return err
+	}
+
+	return syncWailsMetadata(root, app)
+}
+
+func syncWailsMetadata(root string, app appConfig) error {
 	wailsPath := filepath.Join(root, "wails.json")
 	wailsData, err := os.ReadFile(wailsPath)
 	if err != nil {
@@ -42,31 +65,20 @@ func run(root string) error {
 	if err := json.Unmarshal(wailsData, &wails); err != nil {
 		return err
 	}
-
-	appPath := filepath.Join(root, "build", "app.json")
-	app := appConfig{}
-	if data, err := os.ReadFile(appPath); err == nil {
-		if err := json.Unmarshal(data, &app); err != nil {
-			return err
-		}
+	if wails.Info == nil {
+		wails.Info = map[string]interface{}{}
+	}
+	if app.Name != "" {
+		wails.Info["productName"] = app.Name
+	}
+	if app.Version != "" {
+		wails.Info["productVersion"] = app.Version
 	}
 
-	if wails.Info.ProductName != "" {
-		app.Name = wails.Info.ProductName
-	}
-	if wails.Info.ProductVersion != "" {
-		app.Version = wails.Info.ProductVersion
-	}
-
-	out, err := json.MarshalIndent(app, "", "  ")
+	out, err := json.MarshalIndent(wails, "", "  ")
 	if err != nil {
 		return err
 	}
 	out = append(out, '\n')
-	if err := os.WriteFile(appPath, out, 0o644); err != nil {
-		return err
-	}
-
-	embeddedPath := filepath.Join(root, "internal", "buildinfo", "app.json")
-	return os.WriteFile(embeddedPath, out, 0o644)
+	return os.WriteFile(wailsPath, out, 0o644)
 }

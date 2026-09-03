@@ -32,6 +32,6 @@ build with `wails build`.
 - `installer/*` - The files used to create the Windows installer. These are used when building using `wails build`.
 - `info.json` - Application details used for Windows builds. The data here will be used by the Windows installer,
   as well as the application itself (right click the exe -> properties -> details)
-- `app.json` - Metadata shown in the app UI (about dialog and version label). Edit `url` and `urlLabel` here;
-  `name` and `version` are synced from `wails.json` before each build via `sync_app_config.go`.
+- `app.json` - Single source of app metadata (UI version label, about dialog, Windows exe properties).
+  Before each build `sync_app_config.go` embeds it into the binary and updates `wails.json` to match.
 - `wails.exe.manifest` - The main application manifest file.
