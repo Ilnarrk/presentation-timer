@@ -81,10 +81,17 @@ wails doctor
 
 ## Полная сборка приложения
 
-Откройте PowerShell и перейдите в папку проекта:
+Откройте PowerShell, склонируйте репозиторий и перейдите в папку проекта:
 
 ```powershell
-cd D:\py_projects\utils\timer
+git clone https://github.com/Ilnarrk/presentation-timer.git
+cd presentation-timer
+```
+
+Если репозиторий уже скачан, достаточно перейти в его папку:
+
+```powershell
+cd presentation-timer
 ```
 
 ### Шаг 1. Установить зависимости интерфейса
@@ -324,7 +331,7 @@ cd ..
 ## Структура проекта
 
 ```text
-timer/
+presentation-timer/
 ├── app.go                  # API приложения, окно, сигналы
 ├── main.go                 # Точка входа десктопного приложения
 ├── internal/timer/         # Логика таймера
@@ -344,8 +351,11 @@ timer/
 ## Краткая шпаргалка
 
 ```powershell
+# Клонирование (один раз)
+git clone https://github.com/Ilnarrk/presentation-timer.git
+cd presentation-timer
+
 # Сборка
-cd D:\py_projects\utils\timer
 cd frontend && npm install && cd ..
 wails build
 
