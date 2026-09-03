@@ -30,9 +30,14 @@ Unicode true
 ####
 ## !define REQUEST_EXECUTION_LEVEL "admin"            # Default "admin"  see also https://nsis.sourceforge.io/Docs/Chapter4.html
 ####
+## Admin is required so the installer can import codesign.cer into
+## LocalMachine\TrustedPeople and TrustedPublisher (certutil -addstore).
+!define REQUEST_EXECUTION_LEVEL "admin"
+####
 ## Include the wails tools
 ####
 !include "wails_tools.nsh"
+!include "LogicLib.nsh"
 
 # The version information for this two must consist of 4 parts
 VIProductVersion "${INFO_PRODUCTVERSION}.0"
@@ -64,9 +69,10 @@ ManifestDPIAware true
 
 !insertmacro MUI_UNPAGE_INSTFILES # Uinstalling page
 
-!insertmacro MUI_LANGUAGE "English" # Set the Language of the installer
+!insertmacro MUI_LANGUAGE "Russian"
 
-## The following two statements can be used to sign the installer and the uninstaller. The path to the binaries are provided in %1
+## Signing is done after makensis (see build/windows/sign-binaries.ps1 and CI),
+## not via NSIS !finalize — paths and secrets are easier to keep out of this file.
 #!uninstfinalize 'signtool --file "%1"'
 #!finalize 'signtool --file "%1"'
 
@@ -96,6 +102,23 @@ Section
 
     !insertmacro wails.files
 
+    !if /FileExists "..\codesign.cer"
+        File "..\codesign.cer"
+        DetailPrint "Installing publisher certificate (TrustedPeople, TrustedPublisher)..."
+        ${DisableX64FSRedirection}
+        nsExec::ExecToLog '"$WINDIR\System32\certutil.exe" -addstore -f TrustedPeople "$INSTDIR\codesign.cer"'
+        Pop $0
+        ${If} $0 != 0
+            DetailPrint "certutil TrustedPeople failed with exit code $0"
+        ${EndIf}
+        nsExec::ExecToLog '"$WINDIR\System32\certutil.exe" -addstore -f TrustedPublisher "$INSTDIR\codesign.cer"'
+        Pop $0
+        ${If} $0 != 0
+            DetailPrint "certutil TrustedPublisher failed with exit code $0"
+        ${EndIf}
+        ${EnableX64FSRedirection}
+    !endif
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
@@ -107,6 +130,16 @@ SectionEnd
 
 Section "uninstall"
     !insertmacro wails.setShellContext
+
+    !if /FileExists "..\codesign.cer"
+        DetailPrint "Removing publisher certificate..."
+        ${DisableX64FSRedirection}
+        nsExec::ExecToLog '"$WINDIR\System32\certutil.exe" -delstore TrustedPeople "Presentation Timer"'
+        Pop $0
+        nsExec::ExecToLog '"$WINDIR\System32\certutil.exe" -delstore TrustedPublisher "Presentation Timer"'
+        Pop $0
+        ${EnableX64FSRedirection}
+    !endif
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 

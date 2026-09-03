@@ -23,6 +23,10 @@ sounds/
 bin/
 dist/
 
+# Code signing private key (never commit)
+build/windows/codesign.pfx
+*.pfx
+
 # Build artefacts
 *.syso
 resource.syso
@@ -50,5 +54,6 @@ Desktop.ini
 .vscode/
 *.iml
 
-
+# Local-only notes (not for git)
+local/
 

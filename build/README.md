@@ -35,3 +35,6 @@ build with `wails build`.
 - `app.json` - Single source of app metadata (UI version label, about dialog, Windows exe properties).
   Before each build `sync_app_config.go` embeds it into the binary and updates `wails.json` to match.
 - `wails.exe.manifest` - The main application manifest file.
+- `create-codesign-cert.ps1` - Creates a self-signed code signing certificate (`codesign.pfx` private, `codesign.cer` public).
+- `sign-binaries.ps1` - Signs `build/bin` executables with Authenticode after `wails build --nsis`.
+- `installer/project.nsi` - NSIS installer; requires admin to import `codesign.cer` into LocalMachine TrustedPeople and TrustedPublisher.

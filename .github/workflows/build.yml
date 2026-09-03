@@ -43,6 +43,27 @@ jobs:
       - name: Запуск тестов
         run: go test ./internal/...
 
+      - name: Подготовить публичный сертификат для инсталлятора
+        shell: pwsh
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          CODE_SIGN_PFX_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_PASSWORD)) {
+            Write-Warning "Секреты подписи не заданы; инсталлятор соберётся без codesign.cer"
+            exit 0
+          }
+          $tmp = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($tmp, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64.Trim()))
+          try {
+            & (Join-Path $pwd "build/windows/sign-binaries.ps1") `
+              -PfxPath $tmp `
+              -Password $env:CODE_SIGN_PFX_PASSWORD `
+              -ExportOnly
+          } finally {
+            if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Force }
+          }
+
       - name: Сборка приложения
         run: wails build --nsis
 
@@ -59,12 +80,59 @@ jobs:
             Write-Warning "Installer was not built; release will contain only presentation-timer.exe"
           }
 
+      - name: Подпись Authenticode
+        shell: pwsh
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+          CODE_SIGN_PFX_PASSWORD: ${{ secrets.CODE_SIGN_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_BASE64) -or [string]::IsNullOrWhiteSpace($env:CODE_SIGN_PFX_PASSWORD)) {
+            Write-Warning "CODE_SIGN_PFX_BASE64 / CODE_SIGN_PFX_PASSWORD не заданы; подпись пропущена"
+            exit 0
+          }
+          $tmp = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($tmp, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64.Trim()))
+          try {
+            $binDir = (Resolve-Path build/bin).Path
+            & (Join-Path $pwd "build/windows/sign-binaries.ps1") `
+              -PfxPath $tmp `
+              -Password $env:CODE_SIGN_PFX_PASSWORD `
+              -BinDir $binDir `
+              -CerOut (Join-Path $binDir "codesign.cer")
+          } finally {
+            if (Test-Path $tmp) { Remove-Item -LiteralPath $tmp -Force }
+          }
+
+      - name: SHA256 для описания релиза
+        shell: pwsh
+        run: |
+          $lines = @(
+            "## Файлы",
+            "",
+            "- ``presentation-timer-*-installer.exe`` — основной способ установки: копирует приложение и сам импортирует публичный сертификат (нужны права администратора).",
+            "- ``presentation-timer.exe`` — portable-сборка без установки сертификата.",
+            "- ``codesign.cer`` — тот же публичный сертификат, если нужен ручной импорт для portable.",
+            "",
+            "## SHA256",
+            ""
+          )
+          Get-ChildItem build/bin -File | Where-Object { $_.Extension -in ".exe", ".cer" } | Sort-Object Name | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $lines += "- ``$($_.Name)``: ``$hash``"
+          }
+          $lines += ""
+          $lines += "Скачивайте только с этой страницы GitHub Releases. Рекомендуется инсталлятор: он ставит программу и импортирует ``codesign.cer`` в TrustedPeople и TrustedPublisher. Самоподпись не заменяет сертификат центра сертификации; SmartScreen всё ещё может предупредить."
+          $utf8 = New-Object System.Text.UTF8Encoding $false
+          [IO.File]::WriteAllText((Join-Path (Resolve-Path build/bin) "release-notes.md"), ($lines -join "`n") + "`n", $utf8)
+
       - name: Создание релиза и загрузка файлов
         uses: softprops/action-gh-release@v2
         with:
           files: |
             build/bin/presentation-timer.exe
             build/bin/presentation-timer-*-installer.exe
+            build/bin/codesign.cer
+          body_path: build/bin/release-notes.md
           fail_on_unmatched_files: false
           name: Release ${{ github.ref_name }}
           draft: false

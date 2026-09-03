@@ -120,15 +120,59 @@ Wails автоматически:
 
 ### Шаг 3. Найти готовый файл
 
-После успешной сборки исполняемый файл будет здесь:
+После успешной сборки файлы будут здесь:
 
 ```text
 build\bin\presentation-timer.exe
+build\bin\presentation-timer-amd64-installer.exe
 ```
 
-Это и есть готовое приложение. 
+Инсталлятор — основной способ установки на другой ПК: копирует приложение в Program Files и импортирует публичный сертификат (запрос UAC). Portable `.exe` можно запускать без установки, но сертификат тогда нужно импортировать вручную.
 
 Для работы на другом ПК **не нужны** Go, Node.js, npm или исходники проекта.
+
+Перед `wails build --nsis` должен существовать `build\windows\codesign.cer` (его создаёт скрипт сертификата или CI из `.pfx`). Без этого файла инсталлятор соберётся, но не сможет поставить сертификат.
+
+### Подпись сборки
+
+Самозаверяющий сертификат не убирает SmartScreen «из коробки», но инсталлятор может доверить издателя на этом ПК.
+
+Один раз создайте сертификат (нужны права на запись в хранилище текущего пользователя):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build\windows\create-codesign-cert.ps1
+```
+
+Будут созданы `build\windows\codesign.pfx` (закрытый ключ, **не коммитить**) и `build\windows\codesign.cer` (публичный). Сначала выгрузите `.cer`, затем соберите инсталлятор, затем подпишите оба exe:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExportOnly
+wails build --nsis
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль"
+```
+
+Нужен [Windows SDK](https://developer.microsoft.com/windows/downloads/windows-sdk/) (`signtool`). Для релизов из GitHub Actions задайте секреты `CODE_SIGN_PFX_BASE64` (Base64 содержимого `.pfx`) и `CODE_SIGN_PFX_PASSWORD`.
+
+---
+
+## Windows SmartScreen и ложные срабатывания
+
+Windows может показать SmartScreen или Defender для неподписанного либо **самоподписанного** `.exe`: нет репутации у центра сертификации, а приложение запускает браузер для ВКС.
+
+- Скачивайте файлы **только** с [GitHub Releases](https://github.com/Ilnarrk/presentation-timer/releases) и сверяйте SHA256 из описания релиза.
+- **Рекомендуется инсталлятор** `presentation-timer-*-installer.exe`. Он запросит права администратора, установит приложение и сам импортирует публичный `codesign.cer` в хранилища «Доверенные лица» и «Доверенные издатели» локального компьютера (`certutil -addstore`). Закрытый ключ (`.pfx`) в инсталлятор не входит.
+- Portable `presentation-timer.exe` сертификат сам не ставит. При необходимости импортируйте `codesign.cer` вручную:
+
+```powershell
+Import-Certificate -FilePath .\codesign.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+Import-Certificate -FilePath .\codesign.cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
+```
+
+Нужны права администратора. Подробнее: [создание сертификата для подписи пакета](https://learn.microsoft.com/ru-ru/windows/msix/package/create-certificate-package-signing).
+
+Самоподпись **не равна** сертификату от доверенного CA. «Зелёный» SmartScreen без предупреждений возможен только с платным OV/EV Code Signing.
+
+Если предупреждение всё равно появилось и вы доверяете источнику релиза: в SmartScreen — «Подробнее» → «Выполнить в любом случае»; в Defender — разрешить файл на устройстве.
 
 ---
 
@@ -329,6 +373,7 @@ cd ..
 | Не открывается участник ВКС | Установите или обновите Google Chrome / Яндекс Браузер |
 | Участник ждёт допуска | Организатор должен принять гостя в конференцию |
 | Сигнал не слышен в ВКС | Разрешите участнику микрофон и повторите «Тест звука» |
+| SmartScreen / Defender считает файл опасным | Установите через инсталлятор из GitHub Releases (он импортирует сертификат). Для portable сверьте SHA256 и при необходимости импортируйте `codesign.cer` |
 
 ---
 
@@ -345,7 +390,10 @@ presentation-timer/
 ├── frontend/               # Исходники интерфейса (нужны только при сборке)
 ├── build/
 │   ├── appicon.png         # Исходная иконка
-│   └── windows/icon.ico    # Иконка для .exe
+│   └── windows/
+│       ├── icon.ico        # Иконка для .exe
+│       ├── create-codesign-cert.ps1
+│       └── sign-binaries.ps1
 └── build/bin/
     └── presentation-timer.exe
 ```
@@ -359,10 +407,12 @@ presentation-timer/
 git clone https://github.com/Ilnarrk/presentation-timer.git
 cd presentation-timer
 
-# Сборка
+# Сборка и подпись инсталлятора (нужны codesign.pfx / .cer)
 cd frontend && npm install && cd ..
-wails build
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExportOnly
+wails build --nsis
+powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль"
 
-# Запуск
+# Portable без установки
 .\build\bin\presentation-timer.exe
 ```
