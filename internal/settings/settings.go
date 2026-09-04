@@ -9,36 +9,48 @@ import (
 )
 
 type Settings struct {
-	TalkMinutes      int     `json:"talkMinutes"`
-	TalkSeconds      int     `json:"talkSeconds"`
-	QuestionsMinutes int     `json:"questionsMinutes"`
-	QuestionsSeconds int     `json:"questionsSeconds"`
-	ReminderMinutes  int     `json:"reminderMinutes"`
-	ReminderSeconds  int     `json:"reminderSeconds"`
-	SoundID             string  `json:"soundId"`
-	ReminderSoundID     string  `json:"reminderSoundId"`
-	QuestionsSoundID    string  `json:"questionsSoundId"`
-	NextSoundID         string  `json:"nextSoundId"`
-	DeviceID            string  `json:"deviceId"`
-	Volume              float64 `json:"volume"`
-	MuteConferenceSound bool    `json:"muteConferenceSound"`
+	TalkMinutes         int      `json:"talkMinutes"`
+	TalkSeconds         int      `json:"talkSeconds"`
+	QuestionsMinutes    int      `json:"questionsMinutes"`
+	QuestionsSeconds    int      `json:"questionsSeconds"`
+	ReminderMinutes     int      `json:"reminderMinutes"`
+	ReminderSeconds     int      `json:"reminderSeconds"`
+	SoundID             string   `json:"soundId"`
+	ReminderSoundID     string   `json:"reminderSoundId"`
+	QuestionsSoundID    string   `json:"questionsSoundId"`
+	NextSoundID         string   `json:"nextSoundId"`
+	DeviceID            string   `json:"deviceId"`
+	Volume              float64  `json:"volume"`
+	MuteConferenceSound bool     `json:"muteConferenceSound"`
+	SessionTotalMinutes        int      `json:"sessionTotalMinutes"`
+	SessionTotalSeconds        int      `json:"sessionTotalSeconds"`
+	SessionSpeakerCount        int      `json:"sessionSpeakerCount"`
+	SessionSpeakerNames        []string `json:"sessionSpeakerNames"`
+	SessionTalkMinutes         int      `json:"sessionTalkMinutes"`
+	SessionTalkSeconds         int      `json:"sessionTalkSeconds"`
+	SessionQuestionsMinutes    int      `json:"sessionQuestionsMinutes"`
+	SessionQuestionsSeconds    int      `json:"sessionQuestionsSeconds"`
+	SessionUseDefaultTalk      bool     `json:"sessionUseDefaultTalk"`
+	SessionUseDefaultQuestions bool     `json:"sessionUseDefaultQuestions"`
 }
 
 func Default() Settings {
 	return Settings{
-		TalkMinutes:      10,
-		TalkSeconds:      0,
-		QuestionsMinutes: 5,
-		QuestionsSeconds: 0,
-		ReminderMinutes:  2,
-		ReminderSeconds:  0,
+		TalkMinutes:         10,
+		TalkSeconds:         0,
+		QuestionsMinutes:    5,
+		QuestionsSeconds:    0,
+		ReminderMinutes:     2,
+		ReminderSeconds:     0,
 		SoundID:             "chime",
 		ReminderSoundID:     "",
 		QuestionsSoundID:    "",
 		NextSoundID:         "",
 		DeviceID:            "default",
 		Volume:              0.85,
-		MuteConferenceSound: false,
+		MuteConferenceSound:        false,
+		SessionUseDefaultTalk:      true,
+		SessionUseDefaultQuestions: true,
 	}
 }
 
@@ -99,6 +111,22 @@ func (s *Store) Save(settings Settings) error {
 	return s.saveLocked()
 }
 
+// KeepSession copies session template fields from stored settings onto input
+// so a regular settings save cannot wipe a template the user stored separately.
+func KeepSession(input, stored Settings) Settings {
+	input.SessionTotalMinutes = stored.SessionTotalMinutes
+	input.SessionTotalSeconds = stored.SessionTotalSeconds
+	input.SessionSpeakerCount = stored.SessionSpeakerCount
+	input.SessionSpeakerNames = append([]string(nil), stored.SessionSpeakerNames...)
+	input.SessionTalkMinutes = stored.SessionTalkMinutes
+	input.SessionTalkSeconds = stored.SessionTalkSeconds
+	input.SessionQuestionsMinutes = stored.SessionQuestionsMinutes
+	input.SessionQuestionsSeconds = stored.SessionQuestionsSeconds
+	input.SessionUseDefaultTalk = stored.SessionUseDefaultTalk
+	input.SessionUseDefaultQuestions = stored.SessionUseDefaultQuestions
+	return input
+}
+
 func (s *Store) load() error {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -135,6 +163,39 @@ func normalize(value, fallback Settings) Settings {
 	}
 	if value.Volume > 1 {
 		value.Volume = 1
+	}
+	if value.SessionTotalMinutes < 0 {
+		value.SessionTotalMinutes = 0
+	}
+	if value.SessionTotalSeconds < 0 {
+		value.SessionTotalSeconds = 0
+	}
+	if value.SessionSpeakerCount < 0 {
+		value.SessionSpeakerCount = 0
+	}
+	if value.SessionSpeakerCount > 50 {
+		value.SessionSpeakerCount = 50
+	}
+	if value.SessionSpeakerNames == nil {
+		value.SessionSpeakerNames = []string{}
+	}
+	if value.SessionTalkMinutes < 0 {
+		value.SessionTalkMinutes = 0
+	}
+	if value.SessionTalkSeconds < 0 {
+		value.SessionTalkSeconds = 0
+	}
+	if value.SessionQuestionsMinutes < 0 {
+		value.SessionQuestionsMinutes = 0
+	}
+	if value.SessionQuestionsSeconds < 0 {
+		value.SessionQuestionsSeconds = 0
+	}
+	if !value.SessionUseDefaultTalk && value.SessionTalkMinutes == 0 && value.SessionTalkSeconds == 0 {
+		value.SessionUseDefaultTalk = true
+	}
+	if !value.SessionUseDefaultQuestions && value.SessionQuestionsMinutes == 0 && value.SessionQuestionsSeconds == 0 {
+		value.SessionUseDefaultQuestions = true
 	}
 	return value
 }

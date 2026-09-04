@@ -3,12 +3,16 @@ import './styles.css';
 import {
   ConfirmConferenceJoined,
   ConnectConference,
+  CreateSession,
+  EndSession,
   DismissAlert,
   DisconnectConference,
   GetAppInfo,
   GetAudioDevices,
   GetConferenceDiagnostics,
   GetConferenceState,
+  GetSessionState,
+  GetSessionTemplate,
   GetSettings,
   GetSounds,
   GetState,
@@ -18,13 +22,15 @@ import {
   Pause,
   PreviewSound,
   Reset,
+  ResetSession,
+  SaveSessionTemplate,
   SaveSettings,
   SetConferenceBrowserVisible,
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
-import { buildinfo, settings, timer } from '../wailsjs/go/models';
+import { buildinfo, session, settings, timer } from '../wailsjs/go/models';
 
 type Phase = timer.Snapshot['phase'];
 
@@ -38,6 +44,23 @@ interface TimerSnapshot {
   questionsSeconds: number;
   nextReminderIn: number;
   alertActive: boolean;
+}
+
+interface SessionSpeaker {
+  index: number;
+  name: string;
+  talkSeconds: number;
+  questionsSeconds: number;
+  status: 'pending' | 'active' | 'done';
+}
+
+interface SessionState {
+  active: boolean;
+  totalBudgetSeconds: number;
+  usedSeconds: number;
+  remainingSeconds: number;
+  currentIndex: number;
+  speakers: SessionSpeaker[];
 }
 
 interface AppInfo {
@@ -111,6 +134,106 @@ function formatOvertime(totalSeconds: number): string {
   return `+${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
+const MAX_SPEAKERS = 50;
+
+const initialSessionState: SessionState = {
+  active: false,
+  totalBudgetSeconds: 0,
+  usedSeconds: 0,
+  remainingSeconds: 0,
+  currentIndex: 0,
+  speakers: [],
+};
+
+function padSpeakerNames(names: string[] | undefined, count: number): string[] {
+  return Array.from({ length: Math.max(0, count) }, (_, index) => names?.[index] ?? '');
+}
+
+function sessionBudgetSeconds(totalMinutes: number, totalSeconds: number): number {
+  return totalMinutes * 60 + totalSeconds;
+}
+
+function sessionBudgetFromHoursMinutes(hours: number, minutes: number): number {
+  return hours * 3600 + minutes * 60;
+}
+
+function hoursMinutesFromBudget(totalMinutes: number, totalSeconds: number) {
+  const budget = sessionBudgetSeconds(totalMinutes, totalSeconds);
+  return {
+    hours: Math.floor(budget / 3600),
+    minutes: Math.floor((budget % 3600) / 60),
+  };
+}
+
+function budgetToTemplateParts(budgetSeconds: number) {
+  return {
+    totalMinutes: Math.floor(budgetSeconds / 60),
+    totalSeconds: budgetSeconds % 60,
+  };
+}
+
+function parseNumberInput(value: string, max?: number): number {
+  const digits = value.replace(/\D/g, '');
+  if (digits === '') return 0;
+  let parsed = parseInt(digits.replace(/^0+/, '') || '0', 10);
+  if (Number.isNaN(parsed) || parsed < 0) parsed = 0;
+  if (max !== undefined) parsed = Math.min(parsed, max);
+  return parsed;
+}
+
+interface ConfirmDialogState {
+  title: string;
+  message: string;
+}
+
+interface NumericInputProps {
+  value: number;
+  onChange: (value: number) => void;
+  max?: number;
+  disabled?: boolean;
+  onBlur?: () => void;
+}
+
+function NumericInput({ value, onChange, max, disabled, onBlur }: NumericInputProps) {
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      disabled={disabled}
+      value={String(value)}
+      onChange={(event) => onChange(parseNumberInput(event.target.value, max))}
+      onBlur={onBlur}
+    />
+  );
+}
+
+function isSessionTemplateValid(tmpl: session.Template): boolean {
+  return sessionBudgetSeconds(tmpl.totalMinutes || 0, tmpl.totalSeconds || 0) > 0 && (tmpl.speakerCount || 0) >= 1;
+}
+
+function speakerTimeClass(seconds: number, limitSeconds: number, visible: boolean): string {
+  if (!visible) return '';
+  return seconds <= limitSeconds ? 'session-time-ok' : 'session-time-over';
+}
+
+function applySessionTemplateFields(template: session.Template) {
+  const tmpl = session.Template.createFrom(template);
+  const { hours, minutes } = hoursMinutesFromBudget(tmpl.totalMinutes || 0, tmpl.totalSeconds || 0);
+  return {
+    sessionTotalHours: hours,
+    sessionTotalMinutes: minutes,
+    sessionSpeakerCount: tmpl.speakerCount || 0,
+    sessionSpeakerNames: padSpeakerNames(tmpl.speakerNames, tmpl.speakerCount || 0),
+    sessionTalkMinutes: tmpl.talkMinutes || 0,
+    sessionTalkSeconds: tmpl.talkSeconds || 0,
+    sessionQuestionsMinutes: tmpl.questionsMinutes || 0,
+    sessionQuestionsSeconds: tmpl.questionsSeconds || 0,
+    sessionUseDefaultTalk: tmpl.useDefaultTalk !== false,
+    sessionUseDefaultQuestions: tmpl.useDefaultQuestions !== false,
+  };
+}
+
 function App() {
   const [snapshot, setSnapshot] = useState<TimerSnapshot>({
     phase: 'idle',
@@ -150,6 +273,21 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
+  const [sessionTotalHours, setSessionTotalHours] = useState(0);
+  const [sessionTotalMinutes, setSessionTotalMinutes] = useState(0);
+  const [sessionSpeakerCount, setSessionSpeakerCount] = useState(0);
+  const [sessionSpeakerNames, setSessionSpeakerNames] = useState<string[]>([]);
+  const [sessionTalkMinutes, setSessionTalkMinutes] = useState(0);
+  const [sessionTalkSeconds, setSessionTalkSeconds] = useState(0);
+  const [sessionQuestionsMinutes, setSessionQuestionsMinutes] = useState(0);
+  const [sessionQuestionsSeconds, setSessionQuestionsSeconds] = useState(0);
+  const [sessionUseDefaultTalk, setSessionUseDefaultTalk] = useState(true);
+  const [sessionUseDefaultQuestions, setSessionUseDefaultQuestions] = useState(true);
+  const [sessionState, setSessionState] = useState<SessionState>(initialSessionState);
+  const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const confirmResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
   const [appInfo, setAppInfo] = useState<AppInfo>({
     name: 'Таймер докладов',
     version: '1.0.0',
@@ -160,6 +298,34 @@ function App() {
   const settingsLocked = snapshot.isRunning;
   const conferenceActive = ['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(conferenceState.phase);
   const conferenceJoined = conferenceState.phase === 'joined' || conferenceState.phase === 'playing';
+  const sessionBudgetSecondsValue = sessionBudgetFromHoursMinutes(sessionTotalHours, sessionTotalMinutes);
+  const canCreateSession = sessionBudgetSecondsValue > 0 && sessionSpeakerCount >= 1;
+
+  const sessionTemplate = useCallback(() => {
+    const budget = budgetToTemplateParts(sessionBudgetSecondsValue);
+    return session.Template.createFrom({
+    totalMinutes: budget.totalMinutes,
+    totalSeconds: budget.totalSeconds,
+    speakerCount: sessionSpeakerCount,
+    speakerNames: padSpeakerNames(sessionSpeakerNames, sessionSpeakerCount),
+    talkMinutes: sessionTalkMinutes,
+    talkSeconds: sessionTalkSeconds,
+    questionsMinutes: sessionQuestionsMinutes,
+    questionsSeconds: sessionQuestionsSeconds,
+    useDefaultTalk: sessionUseDefaultTalk,
+    useDefaultQuestions: sessionUseDefaultQuestions,
+  });
+  }, [
+    sessionBudgetSecondsValue,
+    sessionSpeakerCount,
+    sessionSpeakerNames,
+    sessionTalkMinutes,
+    sessionTalkSeconds,
+    sessionQuestionsMinutes,
+    sessionQuestionsSeconds,
+    sessionUseDefaultTalk,
+    sessionUseDefaultQuestions,
+  ]);
 
   const persistSettings = useCallback(async (next?: Partial<settings.Settings>) => {
     const payload = settings.Settings.createFrom({
@@ -181,6 +347,10 @@ function App() {
     setSaving(true);
     try {
       await SaveSettings(payload);
+      const saved = settings.Settings.createFrom(await GetSettings());
+      setMuteConferenceSound(saved.muteConferenceSound ?? false);
+      setVolume(saved.volume);
+      setDeviceId(saved.deviceId);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -212,6 +382,8 @@ function App() {
         initialDevices,
         initialConference,
         initialAppInfo,
+        initialSessionTemplate,
+        initialSessionState,
       ] = await Promise.all([
         GetState(),
         GetSettings(),
@@ -219,6 +391,8 @@ function App() {
         GetAudioDevices(),
         GetConferenceState(),
         GetAppInfo(),
+        GetSessionTemplate(),
+        GetSessionState(),
       ]);
 
       setSnapshot(initialState as TimerSnapshot);
@@ -239,6 +413,19 @@ function App() {
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
       setAppInfo(buildinfo.Info.createFrom(initialAppInfo));
+      const template = session.Template.createFrom(initialSessionTemplate);
+      const fields = applySessionTemplateFields(template);
+      setSessionTotalHours(fields.sessionTotalHours);
+      setSessionTotalMinutes(fields.sessionTotalMinutes);
+      setSessionSpeakerCount(fields.sessionSpeakerCount);
+      setSessionSpeakerNames(fields.sessionSpeakerNames);
+      setSessionTalkMinutes(fields.sessionTalkMinutes);
+      setSessionTalkSeconds(fields.sessionTalkSeconds);
+      setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
+      setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
+      setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
+      setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
+      setSessionState(initialSessionState as SessionState);
       if (!['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(initialConference.phase)) {
         setConnectionPromptOpen(true);
       }
@@ -260,6 +447,26 @@ function App() {
       if (state.phase === 'error') setError(state.message);
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = EventsOn('session:state', (state: SessionState) => {
+      setSessionState(state);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribeError = EventsOn('audio:error', (message: string) => {
+      setError(String(message));
+    });
+    const unsubscribeMuted = EventsOn('audio:muted', (message: string) => {
+      setError(String(message));
+    });
+    return () => {
+      unsubscribeError();
+      unsubscribeMuted();
+    };
   }, []);
 
   const displayTime = useMemo(() => {
@@ -313,8 +520,131 @@ function App() {
     }
   };
 
+  const askConfirm = useCallback((message: string, title = 'Подтверждение') => new Promise<boolean>((resolve) => {
+    confirmResolveRef.current = resolve;
+    setConfirmDialog({ title, message });
+  }), []);
+
+  const closeConfirm = (confirmed: boolean) => {
+    confirmResolveRef.current?.(confirmed);
+    confirmResolveRef.current = null;
+    setConfirmDialog(null);
+  };
+
   const handleDismissAlert = () => {
     DismissAlert();
+  };
+
+  const handleCreateSession = async () => {
+    if (!canCreateSession || sessionBusy || settingsLocked) return;
+    if (sessionState.active && !await askConfirm('Заменить текущую сессию? Накопленное время будет сброшено.')) {
+      return;
+    }
+    setSessionBusy(true);
+    try {
+      const next = await CreateSession(sessionTemplate());
+      setSessionState(next as SessionState);
+      setSessionPanelOpen(true);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleResetSession = async () => {
+    if (!sessionState.active || sessionBusy) return;
+    if (!await askConfirm('Сбросить сессию? Накопленное время будет обнулено, очередь начнётся с первого докладчика.')) {
+      return;
+    }
+    setSessionBusy(true);
+    try {
+      const next = await ResetSession();
+      setSessionState(next as SessionState);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleEndSession = async () => {
+    if (!sessionState.active || sessionBusy) return;
+    if (!await askConfirm('Завершить сессию? После завершения можно создать новую.')) {
+      return;
+    }
+    setSessionBusy(true);
+    try {
+      const next = await EndSession();
+      setSessionState(next as SessionState);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleSaveSessionTemplate = async () => {
+    setSessionBusy(true);
+    try {
+      await SaveSessionTemplate(sessionTemplate());
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleLoadSessionTemplate = async () => {
+    if (sessionBusy || settingsLocked) return;
+    setSessionBusy(true);
+    try {
+      const tmpl = session.Template.createFrom(await GetSessionTemplate());
+      if (!isSessionTemplateValid(tmpl)) {
+        setError('Шаблон не сохранён');
+        return;
+      }
+      if (sessionState.active && !await askConfirm('Заменить текущую сессию? Накопленное время будет сброшено.')) {
+        return;
+      }
+      const fields = applySessionTemplateFields(tmpl);
+      setSessionTotalHours(fields.sessionTotalHours);
+      setSessionTotalMinutes(fields.sessionTotalMinutes);
+      setSessionSpeakerCount(fields.sessionSpeakerCount);
+      setSessionSpeakerNames(fields.sessionSpeakerNames);
+      setSessionTalkMinutes(fields.sessionTalkMinutes);
+      setSessionTalkSeconds(fields.sessionTalkSeconds);
+      setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
+      setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
+      setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
+      setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
+      const next = await CreateSession(tmpl);
+      setSessionState(next as SessionState);
+      setSessionPanelOpen(true);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleSpeakerCountChange = (value: number) => {
+    const count = Math.min(MAX_SPEAKERS, Math.max(0, value));
+    setSessionSpeakerCount(count);
+    setSessionSpeakerNames((prev) => padSpeakerNames(prev, count));
+  };
+
+  const handleSpeakerNameChange = (index: number, value: string) => {
+    setSessionSpeakerNames((prev) => {
+      const next = padSpeakerNames(prev, sessionSpeakerCount);
+      next[index] = value;
+      return next;
+    });
   };
 
   const handlePreview = async (previewSoundId: string) => {
@@ -451,7 +781,7 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -465,6 +795,7 @@ function App() {
       close: <><path d="m7 7 10 10" /><path d="M17 7 7 17" /></>,
       browserShow: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><circle cx="6.5" cy="7.5" r="0.8" fill="currentColor" stroke="none" /><circle cx="9" cy="7.5" r="0.8" fill="currentColor" stroke="none" /></>,
       browserHide: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><path d="M8 15h8" /></>,
+      queue: <><path d="M8 7h11" /><path d="M8 12h11" /><path d="M8 17h11" /><circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -496,7 +827,7 @@ function App() {
   );
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${sessionPanelOpen ? ' has-session-panel' : ''}`}>
       <header className="topbar">
         <div className="topbar-left">
           {conferenceActive && (
@@ -511,9 +842,19 @@ function App() {
             </button>
           )}
         </div>
-        <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
-          {icon('settings')}
-        </button>
+        <div className="topbar-right">
+          <button
+            className={`icon-button quiet${sessionPanelOpen ? ' is-active' : ''}`}
+            aria-label={sessionPanelOpen ? 'Скрыть панель сессии' : 'Открыть панель сессии'}
+            title={sessionPanelOpen ? 'Скрыть сессию' : 'Сессия'}
+            onClick={() => setSessionPanelOpen((open) => !open)}
+          >
+            {icon('queue')}
+          </button>
+          <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
+            {icon('settings')}
+          </button>
+        </div>
       </header>
 
       <main className="timer-stage">
@@ -575,6 +916,191 @@ function App() {
         )}
         {error && <div className="error-toast">{error}</div>}
       </main>
+
+      {sessionPanelOpen && (
+        <div className="session-backdrop">
+          <aside className="session-drawer" role="dialog" aria-modal="true" aria-labelledby="session-title">
+            <div className="drawer-header">
+              <div>
+                <h2 id="session-title">Сессия</h2>
+                {sessionState.active && (
+                  <p className="session-duration-hint">
+                    Доклад {formatClock(snapshot.talkSeconds)} · Вопросы {formatClock(snapshot.questionsSeconds)}
+                  </p>
+                )}
+              </div>
+              <button className="icon-button quiet" aria-label="Закрыть панель сессии" onClick={() => setSessionPanelOpen(false)}>
+                {icon('close')}
+              </button>
+            </div>
+
+            {!sessionState.active ? (
+              <>
+                <div className="session-setup">
+                  <div className="session-setup-fields">
+                    <label>Общее время<div className="duration-inputs">
+                      <NumericInput max={99} value={sessionTotalHours} disabled={settingsLocked} onChange={setSessionTotalHours} /><span>ч</span>
+                      <NumericInput max={59} value={sessionTotalMinutes} disabled={settingsLocked} onChange={setSessionTotalMinutes} /><span>мин</span>
+                    </div></label>
+                    <label>Количество докладчиков
+                      <NumericInput
+                        value={sessionSpeakerCount}
+                        max={MAX_SPEAKERS}
+                        disabled={settingsLocked}
+                        onChange={handleSpeakerCountChange}
+                      />
+                    </label>
+
+                    <div className="session-duration-block">
+                      <h3>Длительность</h3>
+                      <label className="settings-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={sessionUseDefaultTalk}
+                          disabled={settingsLocked}
+                          onChange={(e) => setSessionUseDefaultTalk(e.target.checked)}
+                        />
+                        <span>Доклад — как в настройках</span>
+                      </label>
+                      {sessionUseDefaultTalk ? (
+                        <p className="settings-hint">из настроек: {formatClock(talkMinutes * 60 + talkSecondsPart)}</p>
+                      ) : (
+                        <label>Доклад<div className="duration-inputs">
+                          <NumericInput max={180} value={sessionTalkMinutes} disabled={settingsLocked} onChange={setSessionTalkMinutes} /><span>мин</span>
+                          <NumericInput max={59} value={sessionTalkSeconds} disabled={settingsLocked} onChange={setSessionTalkSeconds} /><span>сек</span>
+                        </div></label>
+                      )}
+                      <label className="settings-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={sessionUseDefaultQuestions}
+                          disabled={settingsLocked}
+                          onChange={(e) => setSessionUseDefaultQuestions(e.target.checked)}
+                        />
+                        <span>Вопросы — как в настройках</span>
+                      </label>
+                      {sessionUseDefaultQuestions ? (
+                        <p className="settings-hint">из настроек: {formatClock(questionsMinutes * 60 + questionsSecondsPart)}</p>
+                      ) : (
+                        <label>Вопросы<div className="duration-inputs">
+                          <NumericInput max={60} value={sessionQuestionsMinutes} disabled={settingsLocked} onChange={setSessionQuestionsMinutes} /><span>мин</span>
+                          <NumericInput max={59} value={sessionQuestionsSeconds} disabled={settingsLocked} onChange={setSessionQuestionsSeconds} /><span>сек</span>
+                        </div></label>
+                      )}
+                    </div>
+
+                    {sessionSpeakerCount > 0 && (
+                      <div className="speaker-names speaker-names-flex">
+                        <span className="speaker-names-label">Имена докладчиков</span>
+                        <div className="speaker-names-list">
+                          {Array.from({ length: sessionSpeakerCount }, (_, index) => (
+                            <input
+                              key={index}
+                              type="text"
+                              maxLength={80}
+                              placeholder={`Докладчик ${index + 1}`}
+                              value={sessionSpeakerNames[index] ?? ''}
+                              disabled={settingsLocked}
+                              onChange={(e) => handleSpeakerNameChange(index, e.target.value)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <footer className="session-drawer-footer session-setup-footer">
+                  <div className="session-footer-actions">
+                    <button
+                      className="text-button primary compact-button"
+                      disabled={!canCreateSession || sessionBusy || settingsLocked}
+                      onClick={handleCreateSession}
+                    >
+                      Создать сессию
+                    </button>
+                    <button
+                      className="text-button secondary compact-button"
+                      disabled={sessionBusy || settingsLocked}
+                      onClick={handleLoadSessionTemplate}
+                    >
+                      Загрузить из шаблона
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="about-link session-save-template"
+                    disabled={sessionBusy}
+                    onClick={handleSaveSessionTemplate}
+                  >
+                    Сохранить шаблон
+                  </button>
+                </footer>
+              </>
+            ) : (
+              <>
+                <div className="session-drawer-body">
+                  <div className="session-budget-card">
+                    <span className="session-budget-label">Время сессии</span>
+                    <span className="session-budget">
+                      {formatClock(sessionState.usedSeconds)} / {formatClock(sessionState.totalBudgetSeconds)}
+                    </span>
+                  </div>
+                  <div className="session-list-head" aria-hidden="true">
+                    <span />
+                    <span>#</span>
+                    <span>Докладчик</span>
+                    <span>Докл.</span>
+                    <span>Вопр.</span>
+                  </div>
+                  <ul className="session-speaker-list">
+                    {sessionState.speakers?.map((speaker) => {
+                      const showTimes = speaker.status !== 'pending' || speaker.talkSeconds > 0 || speaker.questionsSeconds > 0;
+                      const talkClass = speakerTimeClass(speaker.talkSeconds, snapshot.talkSeconds, showTimes);
+                      const questionsClass = speakerTimeClass(speaker.questionsSeconds, snapshot.questionsSeconds, showTimes);
+                      return (
+                        <li key={speaker.index} className={`session-speaker session-speaker-${speaker.status}`}>
+                          <span className="session-speaker-dot" aria-hidden="true" />
+                          <span className="session-speaker-index">{speaker.index + 1}</span>
+                          <span className="session-speaker-name">{speaker.name}</span>
+                          <span className={`session-speaker-time${talkClass ? ` ${talkClass}` : ''}`}>
+                            {showTimes ? formatClock(speaker.talkSeconds) : '—'}
+                          </span>
+                          <span className={`session-speaker-time${questionsClass ? ` ${questionsClass}` : ''}`}>
+                            {showTimes ? formatClock(speaker.questionsSeconds) : '—'}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                <footer className="session-drawer-footer">
+                  <div className={`session-remaining${sessionState.usedSeconds > sessionState.totalBudgetSeconds ? ' session-remaining-over' : ''}`}>
+                    {sessionState.usedSeconds > sessionState.totalBudgetSeconds
+                      ? `Превышение ${formatClock(sessionState.usedSeconds - sessionState.totalBudgetSeconds)}`
+                      : `Осталось ${formatClock(sessionState.remainingSeconds)}`}
+                  </div>
+                  <div className="session-footer-actions">
+                    <button
+                      className="text-button secondary compact-button"
+                      disabled={sessionBusy}
+                      onClick={handleResetSession}
+                    >
+                      Сбросить сессию
+                    </button>
+                    <button
+                      className="text-button primary compact-button"
+                      disabled={sessionBusy}
+                      onClick={handleEndSession}
+                    >
+                      Завершить сессию
+                    </button>
+                  </div>
+                </footer>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
 
       <footer className="app-footer-bar">
         <span className="app-version" title={appInfo.name}>v{appInfo.version}</span>
@@ -661,16 +1187,16 @@ function App() {
             <div className="settings-section">
               <h3>Длительность</h3>
               <label>Доклад<div className="duration-inputs">
-                <input type="number" min={0} max={180} value={talkMinutes} disabled={settingsLocked} onChange={(e) => setTalkMinutes(Number(e.target.value))} onBlur={() => persistSettings()} /><span>мин</span>
-                <input type="number" min={0} max={59} value={talkSecondsPart} disabled={settingsLocked} onChange={(e) => setTalkSecondsPart(Number(e.target.value))} onBlur={() => persistSettings()} /><span>сек</span>
+                <NumericInput max={180} value={talkMinutes} disabled={settingsLocked} onChange={setTalkMinutes} onBlur={() => persistSettings()} /><span>мин</span>
+                <NumericInput max={59} value={talkSecondsPart} disabled={settingsLocked} onChange={setTalkSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
               <label>Вопросы<div className="duration-inputs">
-                <input type="number" min={0} max={60} value={questionsMinutes} disabled={settingsLocked} onChange={(e) => setQuestionsMinutes(Number(e.target.value))} onBlur={() => persistSettings()} /><span>мин</span>
-                <input type="number" min={0} max={59} value={questionsSecondsPart} disabled={settingsLocked} onChange={(e) => setQuestionsSecondsPart(Number(e.target.value))} onBlur={() => persistSettings()} /><span>сек</span>
+                <NumericInput max={60} value={questionsMinutes} disabled={settingsLocked} onChange={setQuestionsMinutes} onBlur={() => persistSettings()} /><span>мин</span>
+                <NumericInput max={59} value={questionsSecondsPart} disabled={settingsLocked} onChange={setQuestionsSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
               <label>Повтор сигнала при просрочке<div className="duration-inputs">
-                <input type="number" min={0} max={60} value={reminderMinutes} disabled={settingsLocked} onChange={(e) => setReminderMinutes(Number(e.target.value))} onBlur={() => persistSettings()} /><span>мин</span>
-                <input type="number" min={0} max={59} value={reminderSecondsPart} disabled={settingsLocked} onChange={(e) => setReminderSecondsPart(Number(e.target.value))} onBlur={() => persistSettings()} /><span>сек</span>
+                <NumericInput max={60} value={reminderMinutes} disabled={settingsLocked} onChange={setReminderMinutes} onBlur={() => persistSettings()} /><span>мин</span>
+                <NumericInput max={59} value={reminderSecondsPart} disabled={settingsLocked} onChange={setReminderSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
             </div>
 
@@ -761,6 +1287,24 @@ function App() {
                 {appInfo.urlLabel || appInfo.url}
               </button>
             )}
+          </section>
+        </div>
+      )}
+
+      {confirmDialog && (
+        <div
+          className="modal-backdrop confirm-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && closeConfirm(false)}
+        >
+          <section className="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+            <span className="modal-kicker">Подтверждение</span>
+            <h2 id="confirm-title">{confirmDialog.title}</h2>
+            <p className="modal-copy confirm-copy">{confirmDialog.message}</p>
+            <div className="modal-actions">
+              <button className="text-button secondary" onClick={() => closeConfirm(false)}>Отмена</button>
+              <button className="text-button primary" onClick={() => closeConfirm(true)}>Подтвердить</button>
+            </div>
           </section>
         </div>
       )}

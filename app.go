@@ -11,6 +11,7 @@ import (
 	"timer/internal/audio"
 	"timer/internal/buildinfo"
 	"timer/internal/conference"
+	"timer/internal/session"
 	"timer/internal/settings"
 	"timer/internal/timer"
 )
@@ -23,6 +24,7 @@ type App struct {
 	catalog    *audio.Catalog
 	audio      *audio.Player
 	engine     *timer.Engine
+	session    *session.Tracker
 	conference *conference.Controller
 	projectFS  fs.FS
 }
@@ -63,6 +65,10 @@ func (a *App) startup(ctx context.Context) {
 	a.conference = conference.NewController(func(state conference.State) {
 		runtime.EventsEmit(a.ctx, "conference:state", state)
 	})
+	a.session = session.NewTracker()
+	a.session.SetOnChange(func(state session.State) {
+		runtime.EventsEmit(a.ctx, "session:state", state)
+	})
 
 	cfg := a.timerConfigFromSettings(store.Get())
 	a.engine = timer.NewEngine(cfg)
@@ -71,6 +77,9 @@ func (a *App) startup(ctx context.Context) {
 	a.engine.SetCallbacks(
 		func(snapshot timer.Snapshot) {
 			runtime.EventsEmit(a.ctx, "timer:state", snapshot)
+			if a.session != nil {
+				a.session.Tick()
+			}
 		},
 		func(event timer.AlertEvent) {
 			runtime.EventsEmit(a.ctx, "timer:alert", event)
@@ -125,12 +134,15 @@ func (a *App) SaveSettings(input settings.Settings) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	if a.settings != nil {
+		input = settings.KeepSession(input, a.settings.Get())
+	}
 	if err := a.settings.Save(input); err != nil {
 		return err
 	}
 
 	a.applyAudioSettings(input)
-	if a.engine != nil {
+	if a.engine != nil && (a.session == nil || !a.session.Active()) {
 		a.engine.UpdateConfig(a.timerConfigFromSettings(input))
 	}
 	return nil
@@ -234,6 +246,78 @@ func (a *App) TestConferenceSound(soundID string) error {
 	return a.conference.TestSound(wav)
 }
 
+func (a *App) GetSessionTemplate() session.Template {
+	s := a.GetSettings()
+	return sessionTemplateFromSettings(s)
+}
+
+func (a *App) SaveSessionTemplate(tmpl session.Template) error {
+	tmpl = tmpl.Normalize()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.settings == nil {
+		return nil
+	}
+	current := a.settings.Get()
+	applySessionTemplateToSettings(&current, tmpl)
+	return a.settings.Save(current)
+}
+
+func (a *App) GetSessionState() session.State {
+	if a.session == nil {
+		return session.State{}
+	}
+	return a.session.State()
+}
+
+func (a *App) CreateSession(tmpl session.Template) (session.State, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session == nil {
+		a.session = session.NewTracker()
+	}
+	if err := a.session.Create(tmpl); err != nil {
+		return session.State{}, err
+	}
+	a.applySessionTimerConfig(tmpl)
+	if a.engine != nil {
+		a.engine.Reset()
+	}
+	return a.session.State(), nil
+}
+
+func (a *App) ResetSession() (session.State, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session == nil {
+		return session.State{}, session.ErrSessionInactive
+	}
+	if err := a.session.Reset(); err != nil {
+		return a.session.State(), err
+	}
+	a.applySessionTimerConfig(a.session.Template())
+	if a.engine != nil {
+		a.engine.Reset()
+	}
+	return a.session.State(), nil
+}
+
+func (a *App) EndSession() (session.State, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.session == nil || !a.session.Active() {
+		return session.State{}, session.ErrSessionInactive
+	}
+	a.session.Close()
+	if a.engine != nil {
+		a.engine.Reset()
+		if a.settings != nil {
+			a.engine.UpdateConfig(a.timerConfigFromSettings(a.settings.Get()))
+		}
+	}
+	return a.session.State(), nil
+}
+
 func (a *App) Start() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -248,19 +332,36 @@ func (a *App) Start() error {
 			return conference.ErrSoundNotTested
 		}
 	}
-	return a.engine.Start()
+	snap := a.engine.Snapshot()
+	if err := a.engine.Start(); err != nil {
+		return err
+	}
+	if a.session != nil && a.session.Active() {
+		if snap.IsPaused {
+			a.session.Resume()
+		} else if snap.Phase == timer.PhaseIdle || snap.Phase == timer.PhaseCompleted {
+			a.session.BeginTalk()
+		}
+	}
+	return nil
 }
 
 func (a *App) Pause() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.engine.Pause()
+	if a.session != nil {
+		a.session.Pause()
+	}
 }
 
 func (a *App) Reset() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.engine.Reset()
+	if a.session != nil {
+		a.session.StopSegment()
+	}
 }
 
 func (a *App) GoToQuestions() error {
@@ -269,6 +370,9 @@ func (a *App) GoToQuestions() error {
 	if err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	if a.session != nil {
+		a.session.BeginQuestions()
 	}
 	soundID := a.settings.Get().QuestionsSoundID
 	a.mu.Unlock()
@@ -282,6 +386,9 @@ func (a *App) NextSpeaker() error {
 	if err != nil {
 		a.mu.Unlock()
 		return err
+	}
+	if a.session != nil {
+		a.session.AdvanceSpeaker()
 	}
 	soundID := a.settings.Get().NextSoundID
 	a.mu.Unlock()
@@ -304,6 +411,48 @@ func (a *App) timerConfigFromSettings(s settings.Settings) timer.Config {
 	}
 }
 
+func (a *App) applySessionTimerConfig(tmpl session.Template) {
+	if a.engine == nil || a.settings == nil {
+		return
+	}
+	s := a.settings.Get()
+	talkMin, talkSec, qMin, qSec := tmpl.ResolveDurations(s)
+	a.engine.UpdateConfig(timer.Config{
+		TalkDuration:      durationFromParts(talkMin, talkSec),
+		QuestionsDuration: durationFromParts(qMin, qSec),
+		ReminderInterval:  durationFromParts(s.ReminderMinutes, s.ReminderSeconds),
+	})
+}
+
+func sessionTemplateFromSettings(s settings.Settings) session.Template {
+	return session.Template{
+		TotalMinutes:        s.SessionTotalMinutes,
+		TotalSeconds:        s.SessionTotalSeconds,
+		SpeakerCount:        s.SessionSpeakerCount,
+		SpeakerNames:        append([]string(nil), s.SessionSpeakerNames...),
+		TalkMinutes:         s.SessionTalkMinutes,
+		TalkSeconds:         s.SessionTalkSeconds,
+		QuestionsMinutes:    s.SessionQuestionsMinutes,
+		QuestionsSeconds:    s.SessionQuestionsSeconds,
+		UseDefaultTalk:      s.SessionUseDefaultTalk,
+		UseDefaultQuestions: s.SessionUseDefaultQuestions,
+	}.Normalize()
+}
+
+func applySessionTemplateToSettings(s *settings.Settings, tmpl session.Template) {
+	tmpl = tmpl.Normalize()
+	s.SessionTotalMinutes = tmpl.TotalMinutes
+	s.SessionTotalSeconds = tmpl.TotalSeconds
+	s.SessionSpeakerCount = tmpl.SpeakerCount
+	s.SessionSpeakerNames = tmpl.SpeakerNames
+	s.SessionTalkMinutes = tmpl.TalkMinutes
+	s.SessionTalkSeconds = tmpl.TalkSeconds
+	s.SessionQuestionsMinutes = tmpl.QuestionsMinutes
+	s.SessionQuestionsSeconds = tmpl.QuestionsSeconds
+	s.SessionUseDefaultTalk = tmpl.UseDefaultTalk
+	s.SessionUseDefaultQuestions = tmpl.UseDefaultQuestions
+}
+
 func durationFromParts(minutes, seconds int) time.Duration {
 	return time.Duration(minutes)*time.Minute + time.Duration(seconds)*time.Second
 }
@@ -314,54 +463,78 @@ func (a *App) applyAudioSettings(s settings.Settings) {
 }
 
 func (a *App) handleAlert(event timer.AlertEvent) {
-	go func() {
-		a.mu.Lock()
-		s := a.settings.Get()
-		soundID := s.SoundID
-		if event.Repeated && s.ReminderSoundID != "" {
-			soundID = s.ReminderSoundID
-		}
-		player := a.audio
-		conferenceController := a.conference
-		conferenceConnected := conferenceController != nil && conferenceController.IsConnected()
-		playLocal, playConference := alertPlaybackTargets(s, conferenceConnected)
-		a.mu.Unlock()
+	a.mu.Lock()
+	s := a.settings.Get()
+	soundID := s.SoundID
+	if event.Repeated && s.ReminderSoundID != "" {
+		soundID = s.ReminderSoundID
+	}
+	player := a.audio
+	conferenceController := a.conference
+	volume := s.Volume
+	conferenceConnected := conferenceController != nil && conferenceController.IsConnected()
+	playLocal, playConference := alertPlaybackTargets(s, conferenceConnected)
+	a.mu.Unlock()
 
-		if playConference {
-			wav, err := a.catalog.Render(soundID, s.Volume)
+	runtime.LogInfof(a.ctx, "alert: playLocal=%v mute=%v conference=%v sound=%s",
+		playLocal, s.MuteConferenceSound, conferenceConnected, soundID)
+
+	if playLocal {
+		if err := player.Play(soundID); err != nil {
+			runtime.LogErrorf(a.ctx, "local alert playback failed: %v", err)
+			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
+		}
+	} else if s.MuteConferenceSound {
+		runtime.EventsEmit(a.ctx, "audio:muted", "Локальный звук отключён в настройках")
+	}
+
+	if playConference {
+		go func() {
+			wav, err := a.catalog.Render(soundID, volume)
 			if err != nil {
 				runtime.LogErrorf(a.ctx, "conference sound rendering failed: %v", err)
-			} else if err := conferenceController.PlaySound(wav); err != nil {
+				return
+			}
+			if err := conferenceController.PlaySound(wav); err != nil {
 				runtime.LogErrorf(a.ctx, "conference audio playback failed: %v", err)
 			}
-		}
-		if playLocal {
-			if err := player.Play(soundID); err != nil {
-				runtime.LogErrorf(a.ctx, "audio playback failed: %v", err)
-			}
-		}
-	}()
+		}()
+	}
 
-	runtime.WindowUnminimise(a.ctx)
-	runtime.WindowShow(a.ctx)
+	if runtime.WindowIsMinimised(a.ctx) {
+		runtime.WindowUnminimise(a.ctx)
+	}
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 }
 
 func (a *App) playConferenceCue(soundID string) {
-	if soundID == "" || a.conference == nil || !a.conference.IsConnected() {
+	if soundID == "" {
 		return
 	}
+
 	s := a.settings.Get()
-	wav, err := a.catalog.Render(soundID, s.Volume)
-	if err != nil {
-		runtime.LogErrorf(a.ctx, "conference cue rendering failed: %v", err)
-		return
-	}
-	go func() {
-		if err := a.conference.PlaySound(wav); err != nil {
-			runtime.LogErrorf(a.ctx, "conference cue playback failed: %v", err)
+	conferenceConnected := a.conference != nil && a.conference.IsConnected()
+	playLocal, playConference := alertPlaybackTargets(s, conferenceConnected)
+
+	if playLocal {
+		if err := a.audio.Play(soundID); err != nil {
+			runtime.LogErrorf(a.ctx, "local cue playback failed: %v", err)
+			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
 		}
-	}()
+	}
+
+	if playConference {
+		go func() {
+			wav, err := a.catalog.Render(soundID, s.Volume)
+			if err != nil {
+				runtime.LogErrorf(a.ctx, "conference cue rendering failed: %v", err)
+				return
+			}
+			if err := a.conference.PlaySound(wav); err != nil {
+				runtime.LogErrorf(a.ctx, "conference cue playback failed: %v", err)
+			}
+		}()
+	}
 }
 
 // alertPlaybackTargets decides where an alert should play.

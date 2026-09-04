@@ -114,3 +114,40 @@ func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
 		t.Fatalf("first Preview() error = %v", err)
 	}
 }
+
+func TestPlaySerializesConcurrentPlayback(t *testing.T) {
+	player := NewPlayer()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	player.playbackFn = func(string, []byte) error {
+		once.Do(func() { close(started) })
+		<-release
+		return nil
+	}
+
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- player.Play("chime")
+	}()
+	<-started
+
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- player.Play("chime")
+	}()
+
+	select {
+	case err := <-secondDone:
+		t.Fatalf("second Play() returned early: %v", err)
+	default:
+	}
+
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Play() error = %v", err)
+	}
+	if err := <-secondDone; err != nil {
+		t.Fatalf("second Play() error = %v", err)
+	}
+}

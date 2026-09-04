@@ -12,6 +12,17 @@ import (
 	"github.com/moutend/go-wca/pkg/wca"
 )
 
+func coInitializeMTA() (needUninit bool, err error) {
+	err = ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
+	if err == nil {
+		return true, nil
+	}
+	if oleErr, ok := err.(*ole.OleError); ok && oleErr.Code() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
 func playWAV(deviceID string, wav []byte) error {
 	if len(wav) < 44 {
 		return fmt.Errorf("invalid wav data")
@@ -30,10 +41,11 @@ func playWAV(deviceID string, wav []byte) error {
 	format.NBlockAlign = format.NChannels * format.WBitsPerSample / 8
 	format.NAvgBytesPerSec = format.NSamplesPerSec * uint32(format.NBlockAlign)
 
-	if err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); err != nil {
+	if needUninit, err := coInitializeMTA(); err != nil {
 		return err
+	} else if needUninit {
+		defer ole.CoUninitialize()
 	}
-	defer ole.CoUninitialize()
 
 	var enumerator *wca.IMMDeviceEnumerator
 	if err := wca.CoCreateInstance(wca.CLSID_MMDeviceEnumerator, 0, wca.CLSCTX_ALL, wca.IID_IMMDeviceEnumerator, &enumerator); err != nil {

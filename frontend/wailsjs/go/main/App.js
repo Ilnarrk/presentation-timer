@@ -10,12 +10,20 @@ export function ConnectConference(arg1, arg2) {
   return window['go']['main']['App']['ConnectConference'](arg1, arg2);
 }
 
+export function CreateSession(arg1) {
+  return window['go']['main']['App']['CreateSession'](arg1);
+}
+
 export function DisconnectConference() {
   return window['go']['main']['App']['DisconnectConference']();
 }
 
 export function DismissAlert() {
   return window['go']['main']['App']['DismissAlert']();
+}
+
+export function EndSession() {
+  return window['go']['main']['App']['EndSession']();
 }
 
 export function GetAppInfo() {
@@ -36,6 +44,14 @@ export function GetConferencePlatforms() {
 
 export function GetConferenceState() {
   return window['go']['main']['App']['GetConferenceState']();
+}
+
+export function GetSessionState() {
+  return window['go']['main']['App']['GetSessionState']();
+}
+
+export function GetSessionTemplate() {
+  return window['go']['main']['App']['GetSessionTemplate']();
 }
 
 export function GetSettings() {
@@ -72,6 +88,14 @@ export function PreviewSound(arg1) {
 
 export function Reset() {
   return window['go']['main']['App']['Reset']();
+}
+
+export function ResetSession() {
+  return window['go']['main']['App']['ResetSession']();
+}
+
+export function SaveSessionTemplate(arg1) {
+  return window['go']['main']['App']['SaveSessionTemplate'](arg1);
 }
 
 export function SaveSettings(arg1) {

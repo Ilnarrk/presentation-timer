@@ -325,6 +325,7 @@ func builtinSounds() []soundData {
 type Player struct {
 	mu         sync.RWMutex
 	previewMu  sync.Mutex
+	playMu     sync.Mutex
 	catalog    *Catalog
 	deviceID   string
 	volume     float64
@@ -368,6 +369,9 @@ func (p *Player) Preview(soundID string) error {
 }
 
 func (p *Player) Play(soundID string) error {
+	p.playMu.Lock()
+	defer p.playMu.Unlock()
+
 	p.mu.RLock()
 	deviceID, volume := p.deviceID, p.volume
 	p.mu.RUnlock()
