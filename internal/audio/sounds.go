@@ -2,6 +2,7 @@ package audio
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -323,13 +324,15 @@ func builtinSounds() []soundData {
 }
 
 type Player struct {
-	mu         sync.RWMutex
-	previewMu  sync.Mutex
-	playMu     sync.Mutex
-	catalog    *Catalog
-	deviceID   string
-	volume     float64
-	playbackFn func(string, []byte) error
+	mu           sync.RWMutex
+	previewMu    sync.Mutex
+	playCancelMu sync.Mutex
+	playCancel   context.CancelFunc
+	playGen      uint64
+	catalog      *Catalog
+	deviceID     string
+	volume       float64
+	playbackFn   func(context.Context, string, []byte) error
 }
 
 func NewPlayer(catalogs ...*Catalog) *Player {
@@ -369,8 +372,24 @@ func (p *Player) Preview(soundID string) error {
 }
 
 func (p *Player) Play(soundID string) error {
-	p.playMu.Lock()
-	defer p.playMu.Unlock()
+	p.playCancelMu.Lock()
+	if p.playCancel != nil {
+		p.playCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	p.playCancel = cancel
+	p.playGen++
+	gen := p.playGen
+	p.playCancelMu.Unlock()
+
+	defer func() {
+		p.playCancelMu.Lock()
+		if p.playGen == gen {
+			p.playCancel = nil
+		}
+		p.playCancelMu.Unlock()
+		cancel()
+	}()
 
 	p.mu.RLock()
 	deviceID, volume := p.deviceID, p.volume
@@ -379,7 +398,7 @@ func (p *Player) Play(soundID string) error {
 	if err != nil {
 		return err
 	}
-	return p.playbackFn(deviceID, wav)
+	return p.playbackFn(ctx, deviceID, wav)
 }
 
 func applyWAVVolume(wav []byte, volume float64) []byte {

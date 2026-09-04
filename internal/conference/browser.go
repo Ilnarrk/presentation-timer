@@ -419,6 +419,8 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   let analyser;
   let silence;
   let pendingBuffers = [];
+  const remoteAudioTracks = new Set();
+  let activeSources = [];
 
   const updateLevel = () => {
     if (!analyser) return 0;
@@ -454,11 +456,26 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     flushQueue();
   };
 
+  const stopPlayback = () => {
+    while (activeSources.length) {
+      const source = activeSources.pop();
+      try { source.stop(); } catch (_) {}
+      try { source.disconnect(); } catch (_) {}
+    }
+    pendingBuffers = [];
+  };
+
   const playBuffer = (buffer) => {
+    stopPlayback();
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.connect(mix);
-    source.onended = () => log('playWav.end', { duration: buffer.duration });
+    activeSources.push(source);
+    source.onended = () => {
+      const index = activeSources.indexOf(source);
+      if (index >= 0) activeSources.splice(index, 1);
+      log('playWav.end', { duration: buffer.duration });
+    };
     source.start();
     log('playWav.start', { duration: buffer.duration, state: context.state });
     setTimeout(updateLevel, 80);
@@ -540,31 +557,52 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     return canvas.captureStream(1).getVideoTracks()[0];
   };
 
+  const applyRemoteTrackMute = (track) => {
+    if (!track || track.kind !== 'audio' || track.__timerSynthetic) return;
+    try { track.enabled = !window.__timerReceiveMuted; } catch (_) {}
+  };
+
+  const registerRemoteTrack = (track) => {
+    if (!track || track.kind !== 'audio' || track.__timerSynthetic) return;
+    remoteAudioTracks.add(track);
+    applyRemoteTrackMute(track);
+    const cleanup = () => remoteAudioTracks.delete(track);
+    track.addEventListener('ended', cleanup);
+    track.addEventListener('mute', () => applyRemoteTrackMute(track));
+    track.addEventListener('unmute', () => applyRemoteTrackMute(track));
+  };
+
   const muteRemoteMediaElement = (el) => {
-    if (!el || el.__timerAllowedMedia || !window.__timerReceiveMuted) return;
+    if (!el || el.__timerAllowedMedia) return;
     try {
-      el.muted = true;
-      el.volume = 0;
-      el.__timerRemoteMuted = true;
+      if (window.__timerReceiveMuted) {
+        el.muted = true;
+        el.volume = 0;
+        el.__timerRemoteMuted = true;
+      } else if (el.__timerRemoteMuted) {
+        el.muted = false;
+        el.volume = 1;
+        delete el.__timerRemoteMuted;
+      }
     } catch (_) {}
   };
 
-  const muteRemoteTrack = (track) => {
-    if (!track || track.kind !== 'audio' || track.__timerSynthetic || !window.__timerReceiveMuted) return;
-    try { track.enabled = false; } catch (_) {}
-  };
-
-  const suppressRemotePlayback = () => {
-    if (!window.__timerReceiveMuted) return;
+  const applyReceiveMuteState = () => {
+    remoteAudioTracks.forEach(applyRemoteTrackMute);
     try {
       document.querySelectorAll('audio, video').forEach(muteRemoteMediaElement);
     } catch (_) {}
   };
 
+  const suppressRemotePlayback = () => {
+    if (!window.__timerReceiveMuted) return;
+    applyReceiveMuteState();
+  };
+
   window.__timerSetReceiveMuted = (muted) => {
     window.__timerReceiveMuted = Boolean(muted);
     log('receive.muted', { muted: window.__timerReceiveMuted });
-    if (window.__timerReceiveMuted) suppressRemotePlayback();
+    applyReceiveMuteState();
     document.querySelectorAll('iframe').forEach((frame) => {
       try {
         injectIntoFrame(frame);
@@ -613,10 +651,10 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       log('rtc.create', { count: window.__timerPeerCount });
       const pc = new OriginalRTC(...args);
       pc.addEventListener('track', (event) => {
-        if (event.track) muteRemoteTrack(event.track);
+        if (event.track) registerRemoteTrack(event.track);
         if (event.streams) {
           event.streams.forEach((stream) => {
-            stream.getAudioTracks().forEach(muteRemoteTrack);
+            stream.getAudioTracks().forEach(registerRemoteTrack);
           });
         }
       });
@@ -721,6 +759,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   });
 
   const playLocalWav = (base64) => {
+    stopPlayback();
     ensureAudio();
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);

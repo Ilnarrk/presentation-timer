@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -324,7 +325,9 @@ func (c *Controller) SetReceiveMuted(muted bool) {
 	browser := c.browser
 	c.mu.Unlock()
 
-	_ = setConferenceWebViewOutputMuted(muted)
+	if err := setConferenceWebViewOutputMuted(muted); err != nil && !errors.Is(err, ErrBrowserWindowUnavailable) {
+		log.Printf("conference: webview output mute: %v", err)
+	}
 	if browser != nil {
 		c.evaluateReceiveMuted(browser, muted)
 	}
@@ -335,7 +338,9 @@ func (c *Controller) applyReceiveMuted(browser Browser) {
 	muted := c.receiveMuted
 	c.mu.Unlock()
 
-	_ = setConferenceWebViewOutputMuted(muted)
+	if err := setConferenceWebViewOutputMuted(muted); err != nil && !errors.Is(err, ErrBrowserWindowUnavailable) {
+		log.Printf("conference: webview output mute: %v", err)
+	}
 	c.evaluateReceiveMuted(browser, muted)
 }
 

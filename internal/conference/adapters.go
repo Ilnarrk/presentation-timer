@@ -264,6 +264,11 @@ const joinProbeScript = `(async () => {
     ['выключить динамик', 'отключить звук', 'без звука', 'mute speaker', 'turn off audio', 'disable audio'],
     ['микрофон', 'microphone', 'камер', 'camera']
   );
+  const maybeMuteSpeakers = () => {
+    if (frameWindows().some((win) => Boolean(win.__timerReceiveMuted))) {
+      muteSpeakers();
+    }
+  };
   const detectJoined = () => {
     const controls = elements('button, [role="button"], [aria-label], [title], [data-testid]')
       .filter((element) => visible(element))
@@ -309,7 +314,7 @@ const joinProbeScript = `(async () => {
   clickText(['продолжить в браузере', 'открыть в браузере', 'войти через браузер', 'web version', 'use browser']);
 
   if (detectJoined()) {
-    muteSpeakers();
+    maybeMuteSpeakers();
     clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
     return { joined: true, waiting: false, error: '' };
   }
@@ -335,7 +340,7 @@ const joinProbeScript = `(async () => {
   }
 
   if (detectJoined()) {
-    muteSpeakers();
+    maybeMuteSpeakers();
     clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
     return { joined: true, waiting: false, error: '' };
   }
@@ -349,7 +354,7 @@ const joinProbeScript = `(async () => {
     clickText(joinWords, ['создать', 'зарегистр', 'войти через', 'войти в аккаунт']);
     await sleep(400);
     if (detectJoined()) {
-      muteSpeakers();
+      maybeMuteSpeakers();
       clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
       return { joined: true, waiting: false, error: '' };
     }

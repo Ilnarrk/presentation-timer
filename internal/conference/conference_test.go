@@ -122,6 +122,22 @@ func TestPlayWAVRejectsDisconnectedState(t *testing.T) {
 	}
 }
 
+func TestSetReceiveMutedInvokesMediaBridge(t *testing.T) {
+	browser := &fakeBrowser{result: true}
+	controller := NewController(nil)
+	controller.browser = browser
+
+	controller.SetReceiveMuted(true)
+	if !strings.Contains(browser.expr, "__timerSetReceiveMuted(true)") {
+		t.Fatalf("muted expression = %q", browser.expr)
+	}
+
+	controller.SetReceiveMuted(false)
+	if !strings.Contains(browser.expr, "__timerSetReceiveMuted(false)") {
+		t.Fatalf("unmuted expression = %q", browser.expr)
+	}
+}
+
 func TestDisconnectImmediatelySetsLeft(t *testing.T) {
 	controller := NewController(nil)
 	cancelled := false

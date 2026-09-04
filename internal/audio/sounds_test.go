@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"os"
@@ -94,7 +95,7 @@ func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
-	player.playbackFn = func(string, []byte) error {
+	player.playbackFn = func(context.Context, string, []byte) error {
 		once.Do(func() { close(started) })
 		<-release
 		return nil
@@ -115,37 +116,45 @@ func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
 	}
 }
 
-func TestPlaySerializesConcurrentPlayback(t *testing.T) {
+func TestPlayInterruptsConcurrentPlayback(t *testing.T) {
 	player := NewPlayer()
-	started := make(chan struct{})
-	release := make(chan struct{})
+	firstStarted := make(chan struct{})
+	firstInterrupted := make(chan struct{})
+	secondStarted := make(chan struct{})
 	var once sync.Once
-	player.playbackFn = func(string, []byte) error {
-		once.Do(func() { close(started) })
-		<-release
-		return nil
+
+	player.playbackFn = func(ctx context.Context, _ string, _ []byte) error {
+		once.Do(func() { close(firstStarted) })
+		select {
+		case <-ctx.Done():
+			close(firstInterrupted)
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+			return nil
+		}
 	}
 
 	firstDone := make(chan error, 1)
 	go func() {
 		firstDone <- player.Play("chime")
 	}()
-	<-started
+	<-firstStarted
+
+	player.playbackFn = func(context.Context, string, []byte) error {
+		close(secondStarted)
+		return nil
+	}
 
 	secondDone := make(chan error, 1)
 	go func() {
 		secondDone <- player.Play("chime")
 	}()
 
-	select {
-	case err := <-secondDone:
-		t.Fatalf("second Play() returned early: %v", err)
-	default:
-	}
+	<-firstInterrupted
+	<-secondStarted
 
-	close(release)
-	if err := <-firstDone; err != nil {
-		t.Fatalf("first Play() error = %v", err)
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Play() error = %v, want context.Canceled", err)
 	}
 	if err := <-secondDone; err != nil {
 		t.Fatalf("second Play() error = %v", err)

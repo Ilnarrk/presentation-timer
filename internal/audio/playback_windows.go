@@ -3,6 +3,7 @@
 package audio
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"time"
@@ -23,7 +24,7 @@ func coInitializeMTA() (needUninit bool, err error) {
 	return false, err
 }
 
-func playWAV(deviceID string, wav []byte) error {
+func playWAV(ctx context.Context, deviceID string, wav []byte) error {
 	if len(wav) < 44 {
 		return fmt.Errorf("invalid wav data")
 	}
@@ -93,6 +94,10 @@ func playWAV(deviceID string, wav []byte) error {
 	offset := 0
 
 	for offset < len(pcm) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		var padding uint32
 		if err := client.GetCurrentPadding(&padding); err != nil {
 			return err
@@ -100,8 +105,12 @@ func playWAV(deviceID string, wav []byte) error {
 
 		available := bufferFrames - padding
 		if available == 0 {
-			time.Sleep(5 * time.Millisecond)
-			continue
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Millisecond):
+				continue
+			}
 		}
 
 		framesToWrite := available
@@ -128,6 +137,14 @@ func playWAV(deviceID string, wav []byte) error {
 		offset += bytesToWrite
 	}
 
-	time.Sleep(wavDuration(wav) + 120*time.Millisecond)
-	return nil
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(wavDuration(wav) + 120*time.Millisecond):
+		return nil
+	}
 }
