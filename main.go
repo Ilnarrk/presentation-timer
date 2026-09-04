@@ -25,9 +25,10 @@ func main() {
 	appInfo := buildinfo.Get()
 
 	err := wails.Run(&options.App{
-		Title:     appInfo.Name,
-		Width:     960,
-		Height:    720,
+		Title:       appInfo.Name,
+		AlwaysOnTop: true,
+		Width:       960,
+		Height:      720,
 		MinWidth:  820,
 		MinHeight: 640,
 		AssetServer: &assetserver.Options{

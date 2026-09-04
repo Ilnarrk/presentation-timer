@@ -31,6 +31,11 @@ const (
 	sizeMinimized   = 1
 	swHide          = 0
 	swShow          = 5
+	swpNomove       = 0x0002
+	swpNosize       = 0x0001
+	swpNoactivate   = 0x0010
+	swpShowwindow   = 0x0040
+	hwndTopmost     = ^uintptr(0)
 	csHRedraw       = 0x0002
 	csVRedraw       = 0x0001
 	wsOverlappedWin = 0x00CF0000
@@ -78,6 +83,7 @@ var (
 	procGetModuleHandleW      = kernel32.NewProc("GetModuleHandleW")
 	procCoInitializeEx        = ole32.NewProc("CoInitializeEx")
 	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
+	procSetWindowPos          = user32.NewProc("SetWindowPos")
 
 	wndProcCallback = syscall.NewCallback(conferenceWndProc)
 	classOnce       sync.Once
@@ -272,6 +278,7 @@ func runConferenceWebView(ctx context.Context, session *conferenceSession, profi
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
 	procSetFocus.Call(hwnd)
+	raiseMainWindow()
 
 	go func() {
 		if err := waitForDebugEndpoint(ctx, session.endpoint, 20*time.Second); err != nil {
@@ -387,6 +394,19 @@ func styleConferenceWindow(hwnd uintptr) {
 	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaCaptionColor), uintptr(unsafe.Pointer(&caption)), unsafe.Sizeof(caption))
 	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaTextColor), uintptr(unsafe.Pointer(&text)), unsafe.Sizeof(text))
 	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaBorderColor), uintptr(unsafe.Pointer(&border)), unsafe.Sizeof(border))
+	setWindowTopmost(hwnd, true)
+}
+
+func setWindowTopmost(hwnd uintptr, topmost bool) {
+	insertAfter := uintptr(0)
+	if topmost {
+		insertAfter = hwndTopmost
+	}
+	flags := uintptr(swpNomove | swpNosize | swpNoactivate)
+	if topmost {
+		flags |= swpShowwindow
+	}
+	procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
 func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
@@ -398,6 +418,8 @@ func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	case wmAppSetVisible:
 		if wparam != 0 {
 			procShowWindow.Call(hwnd, swShow)
+			setWindowTopmost(hwnd, true)
+			raiseMainWindow()
 		} else {
 			procShowWindow.Call(hwnd, swHide)
 		}

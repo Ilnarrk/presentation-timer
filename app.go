@@ -75,6 +75,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.templates = templateStore
 
+	conference.SetMainWindowRaiseHandler(func() {
+		runtime.WindowSetAlwaysOnTop(a.ctx, true)
+	})
 	a.conference = conference.NewController(func(state conference.State) {
 		runtime.EventsEmit(a.ctx, "conference:state", state)
 	})
@@ -233,6 +236,9 @@ func (a *App) SetConferenceBrowserVisible(visible bool) (conference.State, error
 	}
 	if err := a.conference.SetBrowserWindowVisible(visible); err != nil {
 		return a.conference.GetState(), err
+	}
+	if visible {
+		runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	}
 	return a.conference.GetState(), nil
 }
@@ -441,7 +447,6 @@ func (a *App) DismissAlert() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.engine.DismissAlert()
-	runtime.WindowSetAlwaysOnTop(a.ctx, false)
 }
 
 func (a *App) timerConfigFromSettings(s settings.Settings) timer.Config {

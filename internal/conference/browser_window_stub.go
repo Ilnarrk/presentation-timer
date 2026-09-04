@@ -9,3 +9,5 @@ func setBrowserWindowVisible(_ bool) error {
 func isBrowserWindowVisible() bool {
 	return false
 }
+
+func setMainWindowRaiseHandler(_ func()) {}

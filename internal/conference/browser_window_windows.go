@@ -10,7 +10,18 @@ import (
 var (
 	activeBrowserWindowMu sync.Mutex
 	activeBrowserWindow   *conferenceSession
+	mainWindowRaiseHandler func()
 )
+
+func setMainWindowRaiseHandler(fn func()) {
+	mainWindowRaiseHandler = fn
+}
+
+func raiseMainWindow() {
+	if mainWindowRaiseHandler != nil {
+		mainWindowRaiseHandler()
+	}
+}
 
 func registerBrowserWindow(session *conferenceSession) {
 	if session == nil {
