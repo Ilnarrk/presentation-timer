@@ -154,7 +154,7 @@ build\bin\presentation-timer-amd64-installer.exe
 powershell -ExecutionPolicy Bypass -File build\windows\create-codesign-cert.ps1
 ```
 
-Будут созданы `build\windows\codesign.pfx` (закрытый ключ, **не коммитить**) и `build\windows\codesign.cer` (публичный). Порядок сборки с подписью:
+Будут созданы `build\windows\codesign.pfx` (закрытый ключ) и `build\windows\codesign.cer` (публичный). Порядок сборки с подписью:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -ExportOnly
@@ -166,7 +166,7 @@ cd ..\..\..
 powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPath build\windows\codesign.pfx -Password "ваш-пароль" -InstallerOnly
 ```
 
-Нужен [Windows SDK](https://developer.microsoft.com/windows/downloads/windows-sdk/) (`signtool`). Для релизов из GitHub Actions задайте секреты `CODE_SIGN_PFX_BASE64` (Base64 содержимого `.pfx`) и `CODE_SIGN_PFX_PASSWORD`.
+Нужен [Windows SDK](https://developer.microsoft.com/windows/downloads/windows-sdk/) (`signtool`).
 
 ---
 
@@ -313,7 +313,7 @@ VoiceMeeter для этого не нужны.
 - Яндекс Телемост (`telemost.yandex.ru`, `telemost.yandex.com`);
 - Контур.Толк (`ktalk.ru`, `talk.kontur.ru`);
 - МТС Линк (`mts-link.ru`, `webinar.ru`);
-- MINT (`mintconf.ru`, корпоративные инсталляции вроде `mint.tatneft.tatar`).
+- MINT (`mintconf.ru`).
 
 Любая другая HTTPS-ссылка на ВКС (on-prem с кастомным доменом или внутренним
 IP-адресом) принимается через универсальный адаптер. Автовход может потребовать
@@ -348,7 +348,7 @@ IP-адресом) принимается через универсальный 
   запущен с `--remote-debugging-port`. Иначе таймер запускает собственный профиль
   браузера в `%AppData%\presentation-timer\conference-browser`.
 - Браузеры выбираются в порядке: Google Chrome, Яндекс Браузер, затем Edge как
-  fallback для совместимых платформ. SaluteJazz в Edge не запускается.
+  fallback для совместимых платформ. 
 - Firefox поддерживается многими ВКС, но не подходит для текущего синтетического
   микрофона таймера: его протокол автоматизации несовместим с используемым CDP.
 - Таймер подтверждает отправку данных в браузер, но ВКС не возвращают надёжную
