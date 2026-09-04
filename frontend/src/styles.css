@@ -870,18 +870,43 @@ input[type="range"] {
 
 .drawer-backdrop {
   place-items: stretch end;
-  padding: 0;
+  padding: 8px;
 }
 
 .settings-drawer {
-  width: min(460px, 100vw);
+  width: min(460px, calc(100vw - 16px));
   height: 100%;
-  padding: 30px;
+  padding: 14px 22px 16px;
   overflow-y: auto;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
   background: #0f131d;
   box-shadow: -24px 0 70px rgba(0, 0, 0, 0.45);
   animation: drawer-in 230ms ease-out;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(125, 147, 255, 0.38) rgba(255, 255, 255, 0.04);
+}
+
+.settings-drawer::-webkit-scrollbar {
+  width: 8px;
+}
+
+.settings-drawer::-webkit-scrollbar-track {
+  margin: 6px 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.settings-drawer::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(125, 147, 255, 0.28);
+  background-clip: padding-box;
+}
+
+.settings-drawer::-webkit-scrollbar-thumb:hover {
+  background: rgba(125, 147, 255, 0.45);
+  background-clip: padding-box;
 }
 
 .drawer-header,
@@ -893,7 +918,7 @@ input[type="range"] {
 }
 
 .drawer-header {
-  margin-bottom: 30px;
+  margin-bottom: 18px;
 }
 
 .settings-section {
@@ -936,32 +961,43 @@ input[type="range"] {
 
 .sound-picker-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
-.sound-preview-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+.icon-button.sound-preview-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
   border-color: rgba(80, 219, 155, 0.2);
   background: rgba(48, 191, 128, 0.09);
   color: #60dfa5;
+  box-shadow: none;
 }
 
-.sound-preview-button svg {
-  width: 15px;
-  height: 15px;
+.icon-button.sound-preview-button svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
 }
 
-.sound-preview-button.is-playing {
+.icon-button.sound-preview-button:hover:not(:disabled) {
+  transform: none;
+  border-color: rgba(80, 219, 155, 0.34);
+  background: rgba(48, 191, 128, 0.14);
+  color: #6eefb0;
+}
+
+.icon-button.sound-preview-button.is-playing {
   opacity: 1;
   border-color: rgba(80, 219, 155, 0.42);
   background: rgba(48, 191, 128, 0.18);
 }
 
-.sound-preview-button.is-playing svg {
+.icon-button.sound-preview-button.is-playing svg {
   animation: preview-pulse 900ms ease-in-out infinite;
 }
 
@@ -972,6 +1008,7 @@ input[type="range"] {
   gap: 8px;
   width: auto;
   min-height: 36px;
+  margin-bottom: 8px;
   padding: 7px 12px;
   border: 1px dashed rgba(125, 147, 255, 0.25);
   border-radius: 10px;
@@ -1006,7 +1043,32 @@ input[type="range"] {
 }
 
 .settings-hint {
-  margin: 16px 0 0;
+  margin: 8px 0 14px;
+}
+
+.settings-checkbox {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.settings-checkbox input[type="checkbox"] {
+  width: 16px;
+  min-height: 16px;
+  height: 16px;
+  margin-top: 1px;
+  padding: 0;
+  flex: 0 0 auto;
+  accent-color: #7189f5;
+  cursor: pointer;
+}
+
+.settings-checkbox span {
+  color: #949db3;
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .saving-note {
@@ -1129,7 +1191,7 @@ input[type="range"] {
 
   .modal,
   .settings-drawer {
-    padding: 24px;
+    padding: 12px 18px 14px;
   }
 
 }

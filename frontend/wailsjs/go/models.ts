@@ -109,10 +109,12 @@ export namespace settings {
 	    reminderMinutes: number;
 	    reminderSeconds: number;
 	    soundId: string;
+	    reminderSoundId: string;
 	    questionsSoundId: string;
 	    nextSoundId: string;
 	    deviceId: string;
 	    volume: number;
+	    muteConferenceSound: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -127,10 +129,12 @@ export namespace settings {
 	        this.reminderMinutes = source["reminderMinutes"];
 	        this.reminderSeconds = source["reminderSeconds"];
 	        this.soundId = source["soundId"];
+	        this.reminderSoundId = source["reminderSoundId"];
 	        this.questionsSoundId = source["questionsSoundId"];
 	        this.nextSoundId = source["nextSoundId"];
 	        this.deviceId = source["deviceId"];
 	        this.volume = source["volume"];
+	        this.muteConferenceSound = source["muteConferenceSound"];
 	    }
 	}
 

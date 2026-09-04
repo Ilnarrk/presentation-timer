@@ -15,11 +15,13 @@ type Settings struct {
 	QuestionsSeconds int     `json:"questionsSeconds"`
 	ReminderMinutes  int     `json:"reminderMinutes"`
 	ReminderSeconds  int     `json:"reminderSeconds"`
-	SoundID          string  `json:"soundId"`
-	QuestionsSoundID string  `json:"questionsSoundId"`
-	NextSoundID      string  `json:"nextSoundId"`
-	DeviceID         string  `json:"deviceId"`
-	Volume           float64 `json:"volume"`
+	SoundID             string  `json:"soundId"`
+	ReminderSoundID     string  `json:"reminderSoundId"`
+	QuestionsSoundID    string  `json:"questionsSoundId"`
+	NextSoundID         string  `json:"nextSoundId"`
+	DeviceID            string  `json:"deviceId"`
+	Volume              float64 `json:"volume"`
+	MuteConferenceSound bool    `json:"muteConferenceSound"`
 }
 
 func Default() Settings {
@@ -30,11 +32,13 @@ func Default() Settings {
 		QuestionsSeconds: 0,
 		ReminderMinutes:  2,
 		ReminderSeconds:  0,
-		SoundID:          "chime",
-		QuestionsSoundID: "",
-		NextSoundID:      "",
-		DeviceID:         "default",
-		Volume:           0.85,
+		SoundID:             "chime",
+		ReminderSoundID:     "",
+		QuestionsSoundID:    "",
+		NextSoundID:         "",
+		DeviceID:            "default",
+		Volume:              0.85,
+		MuteConferenceSound: false,
 	}
 }
 

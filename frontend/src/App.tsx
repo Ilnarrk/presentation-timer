@@ -130,10 +130,12 @@ function App() {
   const [reminderMinutes, setReminderMinutes] = useState(2);
   const [reminderSecondsPart, setReminderSecondsPart] = useState(0);
   const [soundId, setSoundId] = useState('chime');
+  const [reminderSoundId, setReminderSoundId] = useState('');
   const [questionsSoundId, setQuestionsSoundId] = useState('');
   const [nextSoundId, setNextSoundId] = useState('');
   const [deviceId, setDeviceId] = useState('default');
   const [volume, setVolume] = useState(0.85);
+  const [muteConferenceSound, setMuteConferenceSound] = useState(false);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [sounds, setSounds] = useState<SoundOption[]>([]);
   const [conferenceUrl, setConferenceUrl] = useState('');
@@ -168,10 +170,12 @@ function App() {
       reminderMinutes: next?.reminderMinutes ?? reminderMinutes,
       reminderSeconds: next?.reminderSeconds ?? reminderSecondsPart,
       soundId: next?.soundId ?? soundId,
+      reminderSoundId: next?.reminderSoundId ?? reminderSoundId,
       questionsSoundId: next?.questionsSoundId ?? questionsSoundId,
       nextSoundId: next?.nextSoundId ?? nextSoundId,
       deviceId: next?.deviceId ?? deviceId,
       volume: next?.volume ?? volume,
+      muteConferenceSound: next?.muteConferenceSound ?? muteConferenceSound,
     });
 
     setSaving(true);
@@ -190,11 +194,13 @@ function App() {
     reminderMinutes,
     reminderSecondsPart,
     soundId,
+    reminderSoundId,
     questionsSoundId,
     nextSoundId,
     talkMinutes,
     talkSecondsPart,
     volume,
+    muteConferenceSound,
   ]);
 
   useEffect(() => {
@@ -223,10 +229,12 @@ function App() {
       setReminderMinutes(initialSettings.reminderMinutes);
       setReminderSecondsPart(initialSettings.reminderSeconds);
       setSoundId(initialSettings.soundId);
+      setReminderSoundId(initialSettings.reminderSoundId ?? '');
       setQuestionsSoundId(initialSettings.questionsSoundId);
       setNextSoundId(initialSettings.nextSoundId);
       setDeviceId(initialSettings.deviceId);
       setVolume(initialSettings.volume);
+      setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
@@ -443,9 +451,10 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
+      playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
       pause: <><path d="M8 6.5h3v11H8z" /><path d="M14 6.5h3v11h-3z" /></>,
       questions: <><path d="M9.5 9a3 3 0 1 1 4.1 2.8c-1 .4-1.6 1-1.6 2" /><path d="M12 17.5h.01" /></>,
       next: <><path d="m7 6 7 6-7 6V6Z" /><path d="M16 6v12" /></>,
@@ -672,7 +681,16 @@ function App() {
                   {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
                 </select>
                 <button className={`icon-button sound-preview-button${previewingSoundId === soundId ? ' is-playing' : ''}`} disabled={previewingSoundId !== ''} onClick={() => handlePreview(soundId)} aria-label={previewingSoundId === soundId ? 'Сигнал воспроизводится' : 'Прослушать выбранный сигнал'} title={previewingSoundId === soundId ? 'Воспроизводится' : 'Прослушать'}>
-                  {icon('play')}
+                  {icon('playOutline')}
+                </button>
+              </div></label>
+              <label>Сигнал при просрочке<div className="sound-picker-row">
+                <select value={reminderSoundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setReminderSoundId(next); await persistSettings({ reminderSoundId: next }); }}>
+                  <option value="">Как сигнал окончания</option>
+                  {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
+                </select>
+                <button className={`icon-button sound-preview-button${previewingSoundId === reminderSoundId && reminderSoundId ? ' is-playing' : ''}`} disabled={!reminderSoundId || previewingSoundId !== ''} onClick={() => handlePreview(reminderSoundId)} aria-label={previewingSoundId === reminderSoundId ? 'Сигнал просрочки воспроизводится' : 'Прослушать сигнал просрочки'} title={previewingSoundId === reminderSoundId ? 'Воспроизводится' : 'Прослушать'}>
+                  {icon('playOutline')}
                 </button>
               </div></label>
               <label>«Время вопросов» в ВКС<div className="sound-picker-row">
@@ -681,7 +699,7 @@ function App() {
                   {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
                 </select>
                 <button className={`icon-button sound-preview-button${previewingSoundId === questionsSoundId && questionsSoundId ? ' is-playing' : ''}`} disabled={!questionsSoundId || previewingSoundId !== ''} onClick={() => handlePreview(questionsSoundId)} aria-label={previewingSoundId === questionsSoundId ? 'Звук вопросов воспроизводится' : 'Прослушать звук вопросов'} title={previewingSoundId === questionsSoundId ? 'Воспроизводится' : 'Прослушать'}>
-                  {icon('play')}
+                  {icon('playOutline')}
                 </button>
               </div></label>
               <label>«Следующий докладчик» в ВКС<div className="sound-picker-row">
@@ -690,18 +708,32 @@ function App() {
                   {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}
                 </select>
                 <button className={`icon-button sound-preview-button${previewingSoundId === nextSoundId && nextSoundId ? ' is-playing' : ''}`} disabled={!nextSoundId || previewingSoundId !== ''} onClick={() => handlePreview(nextSoundId)} aria-label={previewingSoundId === nextSoundId ? 'Звук следующего докладчика воспроизводится' : 'Прослушать звук следующего докладчика'} title={previewingSoundId === nextSoundId ? 'Воспроизводится' : 'Прослушать'}>
-                  {icon('play')}
+                  {icon('playOutline')}
                 </button>
               </div></label>
-              <label>Громкость<input type="range" min={0} max={1} step={0.05} value={volume} disabled={settingsLocked} onChange={(e) => setVolume(Number(e.target.value))} onMouseUp={() => persistSettings()} onTouchEnd={() => persistSettings()} /></label>
-              <label>Устройство<select value={deviceId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setDeviceId(next); await persistSettings({ deviceId: next }); }}>
-                {devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
-              </select></label>
               <button className="compact-import-button" disabled={importingSound || settingsLocked} onClick={handleImportSound}>
                 {icon('upload')}
                 {importingSound ? 'Импорт…' : 'Добавить аудио'}
               </button>
               <p className="settings-hint">Поддерживаются WAV, MP3 и OGG до 20 МБ и 5 минут.</p>
+              <label>Устройство<select value={deviceId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setDeviceId(next); await persistSettings({ deviceId: next }); }}>
+                {devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}
+              </select></label>
+              <label>Громкость<input type="range" min={0} max={1} step={0.05} value={volume} disabled={settingsLocked} onChange={(e) => setVolume(Number(e.target.value))} onMouseUp={() => persistSettings()} onTouchEnd={() => persistSettings()} /></label>
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={muteConferenceSound}
+                  disabled={settingsLocked}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setMuteConferenceSound(next);
+                    await persistSettings({ muteConferenceSound: next });
+                  }}
+                />
+                <span>Не воспроизводить звук на этом компьютере</span>
+              </label>
+              <p className="settings-hint">Звук будет передаваться только через участника ВКС, без дублирования на колонках.</p>              
             </div>
 
             <button type="button" className="about-link" onClick={() => setAboutOpen(true)}>

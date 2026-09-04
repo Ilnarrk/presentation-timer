@@ -74,7 +74,7 @@ func (a *App) startup(ctx context.Context) {
 		},
 		func(event timer.AlertEvent) {
 			runtime.EventsEmit(a.ctx, "timer:alert", event)
-			a.handleAlert()
+			a.handleAlert(event)
 		},
 	)
 
@@ -313,25 +313,32 @@ func (a *App) applyAudioSettings(s settings.Settings) {
 	a.audio.SetVolume(s.Volume)
 }
 
-func (a *App) handleAlert() {
+func (a *App) handleAlert(event timer.AlertEvent) {
 	go func() {
 		a.mu.Lock()
-		settings := a.settings.Get()
-		soundID := settings.SoundID
+		s := a.settings.Get()
+		soundID := s.SoundID
+		if event.Repeated && s.ReminderSoundID != "" {
+			soundID = s.ReminderSoundID
+		}
 		player := a.audio
 		conferenceController := a.conference
+		conferenceConnected := conferenceController != nil && conferenceController.IsConnected()
+		playLocal, playConference := alertPlaybackTargets(s, conferenceConnected)
 		a.mu.Unlock()
 
-		if conferenceController != nil && conferenceController.IsConnected() {
-			wav, err := a.catalog.Render(soundID, settings.Volume)
+		if playConference {
+			wav, err := a.catalog.Render(soundID, s.Volume)
 			if err != nil {
 				runtime.LogErrorf(a.ctx, "conference sound rendering failed: %v", err)
 			} else if err := conferenceController.PlaySound(wav); err != nil {
 				runtime.LogErrorf(a.ctx, "conference audio playback failed: %v", err)
 			}
 		}
-		if err := player.Play(soundID); err != nil {
-			runtime.LogErrorf(a.ctx, "audio playback failed: %v", err)
+		if playLocal {
+			if err := player.Play(soundID); err != nil {
+				runtime.LogErrorf(a.ctx, "audio playback failed: %v", err)
+			}
 		}
 	}()
 
@@ -344,8 +351,8 @@ func (a *App) playConferenceCue(soundID string) {
 	if soundID == "" || a.conference == nil || !a.conference.IsConnected() {
 		return
 	}
-	settings := a.settings.Get()
-	wav, err := a.catalog.Render(soundID, settings.Volume)
+	s := a.settings.Get()
+	wav, err := a.catalog.Render(soundID, s.Volume)
 	if err != nil {
 		runtime.LogErrorf(a.ctx, "conference cue rendering failed: %v", err)
 		return
@@ -355,4 +362,15 @@ func (a *App) playConferenceCue(soundID string) {
 			runtime.LogErrorf(a.ctx, "conference cue playback failed: %v", err)
 		}
 	}()
+}
+
+// alertPlaybackTargets decides where an alert should play.
+// MuteConferenceSound silences the local speakers so the moderator does not
+// hear a duplicate of the conference participant's audio.
+func alertPlaybackTargets(s settings.Settings, conferenceConnected bool) (playLocal, playConference bool) {
+	return shouldPlayLocalSound(s), conferenceConnected
+}
+
+func shouldPlayLocalSound(s settings.Settings) bool {
+	return !s.MuteConferenceSound
 }
