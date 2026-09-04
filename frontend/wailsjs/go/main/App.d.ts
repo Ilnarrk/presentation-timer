@@ -6,12 +6,15 @@ import {buildinfo} from '../models';
 import {audio} from '../models';
 import {settings} from '../models';
 import {timer} from '../models';
+import {templates} from '../models';
 
 export function ConfirmConferenceJoined():Promise<void>;
 
 export function ConnectConference(arg1:string,arg2:string):Promise<conference.State>;
 
 export function CreateSession(arg1:session.Template):Promise<session.State>;
+
+export function DeleteSessionTemplate(arg1:string):Promise<void>;
 
 export function DisconnectConference():Promise<void>;
 
@@ -43,6 +46,8 @@ export function GoToQuestions():Promise<void>;
 
 export function ImportSound():Promise<audio.Sound>;
 
+export function ListSessionTemplates():Promise<Array<templates.Entry>>;
+
 export function NextSpeaker():Promise<void>;
 
 export function Pause():Promise<void>;
@@ -53,7 +58,7 @@ export function Reset():Promise<void>;
 
 export function ResetSession():Promise<session.State>;
 
-export function SaveSessionTemplate(arg1:session.Template):Promise<void>;
+export function SaveSessionTemplate(arg1:session.Template):Promise<templates.Entry>;
 
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
 

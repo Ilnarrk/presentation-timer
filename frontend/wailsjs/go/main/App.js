@@ -14,6 +14,10 @@ export function CreateSession(arg1) {
   return window['go']['main']['App']['CreateSession'](arg1);
 }
 
+export function DeleteSessionTemplate(arg1) {
+  return window['go']['main']['App']['DeleteSessionTemplate'](arg1);
+}
+
 export function DisconnectConference() {
   return window['go']['main']['App']['DisconnectConference']();
 }
@@ -72,6 +76,10 @@ export function GoToQuestions() {
 
 export function ImportSound() {
   return window['go']['main']['App']['ImportSound']();
+}
+
+export function ListSessionTemplates() {
+  return window['go']['main']['App']['ListSessionTemplates']();
 }
 
 export function NextSpeaker() {

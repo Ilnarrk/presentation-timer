@@ -13,6 +13,7 @@ import (
 	"timer/internal/conference"
 	"timer/internal/session"
 	"timer/internal/settings"
+	"timer/internal/templates"
 	"timer/internal/timer"
 )
 
@@ -21,6 +22,7 @@ type App struct {
 
 	mu         sync.Mutex
 	settings   *settings.Store
+	templates  *templates.Store
 	catalog    *audio.Catalog
 	audio      *audio.Player
 	engine     *timer.Engine
@@ -62,6 +64,17 @@ func (a *App) startup(ctx context.Context) {
 		store = settings.NewMemoryStoreWithDefaults(defaults)
 	}
 	a.settings = store
+
+	templateStore, err := templates.NewStore()
+	if err != nil {
+		runtime.LogErrorf(ctx, "session templates init failed: %v", err)
+		templateStore = templates.NewMemoryStore()
+	}
+	if err := templateStore.MigrateFromSettings(sessionTemplateFromSettings(store.Get())); err != nil {
+		runtime.LogErrorf(ctx, "session templates migration failed: %v", err)
+	}
+	a.templates = templateStore
+
 	a.conference = conference.NewController(func(state conference.State) {
 		runtime.EventsEmit(a.ctx, "conference:state", state)
 	})
@@ -247,20 +260,48 @@ func (a *App) TestConferenceSound(soundID string) error {
 }
 
 func (a *App) GetSessionTemplate() session.Template {
+	if a.templates != nil {
+		if tmpl, ok := a.templates.Latest(); ok {
+			return tmpl
+		}
+	}
 	s := a.GetSettings()
 	return sessionTemplateFromSettings(s)
 }
 
-func (a *App) SaveSessionTemplate(tmpl session.Template) error {
+func (a *App) ListSessionTemplates() []templates.Entry {
+	if a.templates == nil {
+		return nil
+	}
+	return a.templates.List()
+}
+
+func (a *App) SaveSessionTemplate(tmpl session.Template) (templates.Entry, error) {
 	tmpl = tmpl.Normalize()
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.settings == nil {
-		return nil
+	if a.templates == nil {
+		return templates.Entry{}, nil
 	}
-	current := a.settings.Get()
-	applySessionTemplateToSettings(&current, tmpl)
-	return a.settings.Save(current)
+	entry, err := a.templates.Save(tmpl)
+	if err != nil {
+		return templates.Entry{}, err
+	}
+	if a.settings != nil {
+		current := a.settings.Get()
+		applySessionTemplateToSettings(&current, tmpl)
+		if err := a.settings.Save(current); err != nil {
+			return templates.Entry{}, err
+		}
+	}
+	return entry, nil
+}
+
+func (a *App) DeleteSessionTemplate(id string) error {
+	if a.templates == nil {
+		return templates.ErrNotFound
+	}
+	return a.templates.Delete(id)
 }
 
 func (a *App) GetSessionState() session.State {

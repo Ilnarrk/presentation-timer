@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import './styles.css';
 import {
   ConfirmConferenceJoined,
@@ -6,6 +6,7 @@ import {
   CreateSession,
   EndSession,
   DismissAlert,
+  DeleteSessionTemplate,
   DisconnectConference,
   GetAppInfo,
   GetAudioDevices,
@@ -18,6 +19,7 @@ import {
   GetState,
   GoToQuestions,
   ImportSound,
+  ListSessionTemplates,
   NextSpeaker,
   Pause,
   PreviewSound,
@@ -30,7 +32,7 @@ import {
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
-import { buildinfo, session, settings, timer } from '../wailsjs/go/models';
+import { buildinfo, session, settings, templates, timer } from '../wailsjs/go/models';
 
 type Phase = timer.Snapshot['phase'];
 
@@ -208,10 +210,6 @@ function NumericInput({ value, onChange, max, disabled, onBlur }: NumericInputPr
   );
 }
 
-function isSessionTemplateValid(tmpl: session.Template): boolean {
-  return sessionBudgetSeconds(tmpl.totalMinutes || 0, tmpl.totalSeconds || 0) > 0 && (tmpl.speakerCount || 0) >= 1;
-}
-
 function speakerTimeClass(seconds: number, limitSeconds: number, visible: boolean): string {
   if (!visible) return '';
   return seconds <= limitSeconds ? 'session-time-ok' : 'session-time-over';
@@ -232,6 +230,17 @@ function applySessionTemplateFields(template: session.Template) {
     sessionUseDefaultTalk: tmpl.useDefaultTalk !== false,
     sessionUseDefaultQuestions: tmpl.useDefaultQuestions !== false,
   };
+}
+
+function SettingsLockBanner({ message }: { message: string }) {
+  return <div className="settings-lock-banner" role="status">{message}</div>;
+}
+
+function templateEntryDescription(entry: templates.Entry): string {
+  const tmpl = session.Template.createFrom(entry.template);
+  const budget = sessionBudgetSeconds(tmpl.totalMinutes || 0, tmpl.totalSeconds || 0);
+  const speakers = tmpl.speakerCount || 0;
+  return `${formatClock(budget)} общее · ${speakers} ${speakers === 1 ? 'докладчик' : speakers < 5 ? 'докладчика' : 'докладчиков'}`;
 }
 
 function App() {
@@ -288,6 +297,10 @@ function App() {
   const [sessionBusy, setSessionBusy] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const confirmResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateEntries, setTemplateEntries] = useState<templates.Entry[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [appInfo, setAppInfo] = useState<AppInfo>({
     name: 'Таймер докладов',
     version: '1.0.0',
@@ -296,6 +309,13 @@ function App() {
   });
 
   const settingsLocked = snapshot.isRunning;
+  const settingsLockMessage = useMemo(() => {
+    if (!settingsLocked) return '';
+    if (snapshot.isPaused) {
+      return 'Таймер на паузе. Сбросьте таймер, чтобы изменить настройки и сессию.';
+    }
+    return 'Таймер запущен. Сбросьте таймер, чтобы изменить настройки и сессию.';
+  }, [settingsLocked, snapshot.isPaused]);
   const conferenceActive = ['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(conferenceState.phase);
   const conferenceJoined = conferenceState.phase === 'joined' || conferenceState.phase === 'playing';
   const sessionBudgetSecondsValue = sessionBudgetFromHoursMinutes(sessionTotalHours, sessionTotalMinutes);
@@ -469,6 +489,12 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!successMessage) return undefined;
+    const timeout = window.setTimeout(() => setSuccessMessage(''), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [successMessage]);
+
   const displayTime = useMemo(() => {
     if (snapshot.phase === 'talkOvertime' || snapshot.phase === 'questionsOvertime') {
       return formatOvertime(snapshot.overtimeSeconds);
@@ -520,7 +546,7 @@ function App() {
     }
   };
 
-  const askConfirm = useCallback((message: string, title = 'Подтверждение') => new Promise<boolean>((resolve) => {
+  const askConfirm = useCallback((title: string, message: string) => new Promise<boolean>((resolve) => {
     confirmResolveRef.current = resolve;
     setConfirmDialog({ title, message });
   }), []);
@@ -537,7 +563,7 @@ function App() {
 
   const handleCreateSession = async () => {
     if (!canCreateSession || sessionBusy || settingsLocked) return;
-    if (sessionState.active && !await askConfirm('Заменить текущую сессию? Накопленное время будет сброшено.')) {
+    if (sessionState.active && !await askConfirm('Заменить текущую сессию?', 'Накопленное время будет сброшено.')) {
       return;
     }
     setSessionBusy(true);
@@ -555,7 +581,7 @@ function App() {
 
   const handleResetSession = async () => {
     if (!sessionState.active || sessionBusy) return;
-    if (!await askConfirm('Сбросить сессию? Накопленное время будет обнулено, очередь начнётся с первого докладчика.')) {
+    if (!await askConfirm('Сбросить сессию?', 'Накопленное время будет обнулено, очередь начнётся с первого докладчика.')) {
       return;
     }
     setSessionBusy(true);
@@ -572,7 +598,7 @@ function App() {
 
   const handleEndSession = async () => {
     if (!sessionState.active || sessionBusy) return;
-    if (!await askConfirm('Завершить сессию? После завершения можно создать новую.')) {
+    if (!await askConfirm('Завершить сессию?', 'После завершения можно создать новую.')) {
       return;
     }
     setSessionBusy(true);
@@ -587,10 +613,33 @@ function App() {
     }
   };
 
+  const applySessionTemplate = async (tmpl: session.Template) => {
+    if (sessionState.active && !await askConfirm('Заменить текущую сессию?', 'Накопленное время будет сброшено.')) {
+      return false;
+    }
+    const fields = applySessionTemplateFields(tmpl);
+    setSessionTotalHours(fields.sessionTotalHours);
+    setSessionTotalMinutes(fields.sessionTotalMinutes);
+    setSessionSpeakerCount(fields.sessionSpeakerCount);
+    setSessionSpeakerNames(fields.sessionSpeakerNames);
+    setSessionTalkMinutes(fields.sessionTalkMinutes);
+    setSessionTalkSeconds(fields.sessionTalkSeconds);
+    setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
+    setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
+    setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
+    setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
+    const next = await CreateSession(tmpl);
+    setSessionState(next as SessionState);
+    setSessionPanelOpen(true);
+    setError('');
+    return true;
+  };
+
   const handleSaveSessionTemplate = async () => {
     setSessionBusy(true);
     try {
-      await SaveSessionTemplate(sessionTemplate());
+      const entry = templates.Entry.createFrom(await SaveSessionTemplate(sessionTemplate()));
+      setSuccessMessage(`Шаблон «${entry.name}» сохранён`);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -599,32 +648,50 @@ function App() {
     }
   };
 
-  const handleLoadSessionTemplate = async () => {
-    if (sessionBusy || settingsLocked) return;
+  const handleOpenTemplateModal = async () => {
+    if (sessionBusy) return;
     setSessionBusy(true);
     try {
-      const tmpl = session.Template.createFrom(await GetSessionTemplate());
-      if (!isSessionTemplateValid(tmpl)) {
-        setError('Шаблон не сохранён');
-        return;
+      const entries = (await ListSessionTemplates()).map((entry) => templates.Entry.createFrom(entry));
+      setTemplateEntries(entries);
+      setSelectedTemplateId(entries[0]?.id ?? '');
+      setTemplateModalOpen(true);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleLoadSelectedTemplate = async () => {
+    if (settingsLocked || sessionBusy || !selectedTemplateId) return;
+    const entry = templateEntries.find((item) => item.id === selectedTemplateId);
+    if (!entry) return;
+    setSessionBusy(true);
+    try {
+      const applied = await applySessionTemplate(session.Template.createFrom(entry.template));
+      if (applied) {
+        setTemplateModalOpen(false);
       }
-      if (sessionState.active && !await askConfirm('Заменить текущую сессию? Накопленное время будет сброшено.')) {
-        return;
-      }
-      const fields = applySessionTemplateFields(tmpl);
-      setSessionTotalHours(fields.sessionTotalHours);
-      setSessionTotalMinutes(fields.sessionTotalMinutes);
-      setSessionSpeakerCount(fields.sessionSpeakerCount);
-      setSessionSpeakerNames(fields.sessionSpeakerNames);
-      setSessionTalkMinutes(fields.sessionTalkMinutes);
-      setSessionTalkSeconds(fields.sessionTalkSeconds);
-      setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
-      setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
-      setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
-      setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
-      const next = await CreateSession(tmpl);
-      setSessionState(next as SessionState);
-      setSessionPanelOpen(true);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (entry: templates.Entry, event: MouseEvent) => {
+    event.stopPropagation();
+    if (!await askConfirm('Удалить шаблон?', `«${entry.name}» будет удалён без возможности восстановления.`)) {
+      return;
+    }
+    setSessionBusy(true);
+    try {
+      await DeleteSessionTemplate(entry.id);
+      const entries = (await ListSessionTemplates()).map((item) => templates.Entry.createFrom(item));
+      setTemplateEntries(entries);
+      setSelectedTemplateId(entries.find((item) => item.id === selectedTemplateId)?.id ?? entries[0]?.id ?? '');
       setError('');
     } catch (err) {
       setError(String(err));
@@ -781,7 +848,7 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -796,6 +863,7 @@ function App() {
       browserShow: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><circle cx="6.5" cy="7.5" r="0.8" fill="currentColor" stroke="none" /><circle cx="9" cy="7.5" r="0.8" fill="currentColor" stroke="none" /></>,
       browserHide: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><path d="M8 15h8" /></>,
       queue: <><path d="M8 7h11" /><path d="M8 12h11" /><path d="M8 17h11" /><circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" /></>,
+      trash: <><path d="M5 7h14" /><path d="M9.5 7V5.5h5V7" /><path d="M8 7l.7 11.5h6.6L16 7" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -915,6 +983,7 @@ function App() {
           </button>
         )}
         {error && <div className="error-toast">{error}</div>}
+        {successMessage && <div className="success-toast">{successMessage}</div>}
       </main>
 
       {sessionPanelOpen && (
@@ -936,6 +1005,7 @@ function App() {
 
             {!sessionState.active ? (
               <>
+                {settingsLocked && <SettingsLockBanner message={settingsLockMessage} />}
                 <div className="session-setup">
                   <div className="session-setup-fields">
                     <label>Общее время<div className="duration-inputs">
@@ -1014,6 +1084,7 @@ function App() {
                     <button
                       className="text-button primary compact-button"
                       disabled={!canCreateSession || sessionBusy || settingsLocked}
+                      title={settingsLocked ? settingsLockMessage : undefined}
                       onClick={handleCreateSession}
                     >
                       Создать сессию
@@ -1021,7 +1092,8 @@ function App() {
                     <button
                       className="text-button secondary compact-button"
                       disabled={sessionBusy || settingsLocked}
-                      onClick={handleLoadSessionTemplate}
+                      title={settingsLocked ? settingsLockMessage : undefined}
+                      onClick={handleOpenTemplateModal}
                     >
                       Загрузить из шаблона
                     </button>
@@ -1184,6 +1256,8 @@ function App() {
               <button className="icon-button quiet" aria-label="Закрыть настройки" onClick={() => setSettingsOpen(false)}>{icon('close')}</button>
             </div>
 
+            {settingsLocked && <SettingsLockBanner message={settingsLockMessage} />}
+
             <div className="settings-section">
               <h3>Длительность</h3>
               <label>Доклад<div className="duration-inputs">
@@ -1275,18 +1349,85 @@ function App() {
             <button className="icon-button quiet close-button" aria-label="Закрыть" onClick={() => setAboutOpen(false)}>
               {icon('close')}
             </button>
-            <span className="modal-kicker">О программе</span>
-            <h2 id="about-title">{appInfo.name}</h2>
-            <p className="about-version">Версия {appInfo.version}</p>
-            {appInfo.url && (
+            <div className="about-modal-body">
+              <h2 id="about-title">{appInfo.name}</h2>
+              <p className="about-version">Версия {appInfo.version}</p>
+              {appInfo.url && (
+                <button
+                  type="button"
+                  className="about-url-link"
+                  onClick={() => BrowserOpenURL(appInfo.url)}
+                >
+                  {appInfo.urlLabel || appInfo.url}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {templateModalOpen && (
+        <div
+          className="modal-backdrop template-backdrop"
+          role="presentation"
+          onMouseDown={(event) => event.target === event.currentTarget && setTemplateModalOpen(false)}
+        >
+          <section className="modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-title">
+            <button className="icon-button quiet close-button" aria-label="Закрыть" onClick={() => setTemplateModalOpen(false)}>
+              {icon('close')}
+            </button>
+            <h2 id="template-title">Загрузить шаблон</h2>
+            {settingsLocked ? (
+              <SettingsLockBanner message={settingsLockMessage} />
+            ) : templateEntries.length === 0 ? (
+              <p className="modal-copy template-empty">Нет сохранённых шаблонов</p>
+            ) : (
+              <div className="template-table-wrap">
+                <table className="template-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Шаблон</th>
+                      <th scope="col">Параметры</th>
+                      <th scope="col" className="template-table-actions-head"><span className="sr-only">Действия</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {templateEntries.map((entry) => (
+                      <tr
+                        key={entry.id}
+                        className={selectedTemplateId === entry.id ? 'is-selected' : undefined}
+                        onClick={() => setSelectedTemplateId(entry.id)}
+                      >
+                        <td className="template-table-name">{entry.name}</td>
+                        <td className="template-table-meta">{templateEntryDescription(entry)}</td>
+                        <td className="template-table-actions">
+                          <button
+                            type="button"
+                            className="icon-button quiet template-delete-button"
+                            aria-label={`Удалить шаблон ${entry.name}`}
+                            disabled={sessionBusy}
+                            onClick={(event) => handleDeleteTemplate(entry, event)}
+                          >
+                            {icon('trash')}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="modal-actions template-actions">
+              <button type="button" className="text-button secondary compact-button" onClick={() => setTemplateModalOpen(false)}>Отмена</button>
               <button
                 type="button"
-                className="about-url-link"
-                onClick={() => BrowserOpenURL(appInfo.url)}
+                className="text-button primary compact-button"
+                disabled={settingsLocked || sessionBusy || !selectedTemplateId}
+                onClick={handleLoadSelectedTemplate}
               >
-                {appInfo.urlLabel || appInfo.url}
+                Загрузить
               </button>
-            )}
+            </div>
           </section>
         </div>
       )}
@@ -1298,12 +1439,11 @@ function App() {
           onMouseDown={(event) => event.target === event.currentTarget && closeConfirm(false)}
         >
           <section className="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
-            <span className="modal-kicker">Подтверждение</span>
             <h2 id="confirm-title">{confirmDialog.title}</h2>
             <p className="modal-copy confirm-copy">{confirmDialog.message}</p>
             <div className="modal-actions">
-              <button className="text-button secondary" onClick={() => closeConfirm(false)}>Отмена</button>
-              <button className="text-button primary" onClick={() => closeConfirm(true)}>Подтвердить</button>
+              <button type="button" className="text-button secondary compact-button" onClick={() => closeConfirm(false)}>Отмена</button>
+              <button type="button" className="text-button primary compact-button" onClick={() => closeConfirm(true)}>Подтвердить</button>
             </div>
           </section>
         </div>
