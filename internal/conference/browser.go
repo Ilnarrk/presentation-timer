@@ -5,19 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	cdpbrowser "github.com/chromedp/cdproto/browser"
+	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/target"
@@ -71,53 +69,6 @@ func (b *chromeBrowser) Attachments() []attachedTarget {
 	return out
 }
 
-func openBrowser(parent context.Context, targetURL, platformID string) (*chromeBrowser, context.CancelFunc, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return nil, nil, fmt.Errorf("не удалось определить каталог профиля браузера: %w", err)
-	}
-	appDir := filepath.Join(configDir, "presentation-timer")
-	if err := os.MkdirAll(appDir, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("не удалось создать каталог браузера: %w", err)
-	}
-	profileDir := filepath.Join(appDir, "conference-browser")
-	if err := os.MkdirAll(profileDir, 0o755); err != nil {
-		return nil, nil, fmt.Errorf("не удалось создать профиль браузера: %w", err)
-	}
-
-	var failures []string
-	for _, endpoint := range discoverBrowserEndpoints(parent, appDir, platformID) {
-		browser, cancel, err := attachBrowser(parent, targetURL, endpoint.URL, "Подключено к уже запущенному "+endpoint.Label)
-		if err == nil {
-			return browser, cancel, nil
-		}
-		failures = append(failures, fmt.Sprintf("%s: %v", endpoint.URL, err))
-	}
-
-	candidates := findChromiumCandidates(platformID)
-	if len(candidates) == 0 {
-		if firefoxInstalled() {
-			return nil, nil, errors.New("найден Firefox, но синтетический микрофон таймера требует Google Chrome или Яндекс Браузер; установите один из них")
-		}
-		return nil, nil, errors.New("не найден совместимый браузер: установите Google Chrome или Яндекс Браузер")
-	}
-	for _, candidate := range candidates {
-		endpoint, err := launchBrowser(parent, candidate.Path, profileDir)
-		if err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", candidate.Label, err))
-			continue
-		}
-		_ = saveBrowserEndpoint(appDir, endpoint)
-		browser, cancel, err := attachBrowser(parent, targetURL, endpoint, "Запущен "+candidate.Label)
-		if err == nil {
-			return browser, cancel, nil
-		}
-		failures = append(failures, fmt.Sprintf("%s: %v", candidate.Label, err))
-	}
-
-	return nil, nil, fmt.Errorf("не удалось запустить совместимый браузер: %s", strings.Join(failures, "; "))
-}
-
 func attachBrowser(
 	parent context.Context,
 	targetURL string,
@@ -129,7 +80,14 @@ func attachBrowser(
 		return nil, nil, err
 	}
 	allocatorCtx, allocatorCancel := chromedp.NewRemoteAllocator(parent, wsURL)
-	browserCtx, browserCancel := chromedp.NewContext(allocatorCtx)
+
+	var browserCtx context.Context
+	var browserCancel context.CancelFunc
+	if pageID := existingPageTargetID(parent, endpoint); pageID != "" {
+		browserCtx, browserCancel = chromedp.NewContext(allocatorCtx, chromedp.WithTargetID(target.ID(pageID)))
+	} else {
+		browserCtx, browserCancel = chromedp.NewContext(allocatorCtx)
+	}
 	cancel := func() {
 		browserCancel()
 		allocatorCancel()
@@ -158,6 +116,9 @@ func attachBrowser(
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			grantMediaPermissions(ctx, targetURL)
 			return nil
+		}),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return applyChromeUserAgent(ctx)
 		}),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			_, err := page.AddScriptToEvaluateOnNewDocument(mediaBridgeScript).Do(ctx)
@@ -216,6 +177,7 @@ func injectMediaBridgeIntoTarget(parent context.Context, info *target.Info) {
 	runCtx, runCancel := context.WithTimeout(ctx, 8*time.Second)
 	defer runCancel()
 	_ = chromedp.Run(runCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		_ = applyChromeUserAgent(ctx)
 		if _, err := page.AddScriptToEvaluateOnNewDocument(mediaBridgeScript).Do(ctx); err != nil {
 			return nil
 		}
@@ -224,50 +186,40 @@ func injectMediaBridgeIntoTarget(parent context.Context, info *target.Info) {
 	}))
 }
 
-func launchBrowser(ctx context.Context, executable, profileDir string) (string, error) {
+func pickLocalDebugPort() (int, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return "", fmt.Errorf("не удалось выбрать порт отладки: %w", err)
+		return 0, fmt.Errorf("не удалось выбрать порт отладки: %w", err)
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	_ = listener.Close()
+	return port, nil
+}
 
-	args := []string{
-		fmt.Sprintf("--remote-debugging-port=%d", port),
-		"--remote-debugging-address=127.0.0.1",
-		"--user-data-dir=" + profileDir,
-		"--no-first-run",
-		"--no-default-browser-check",
-		"--disable-background-timer-throttling",
-		"--disable-renderer-backgrounding",
-		"--autoplay-policy=no-user-gesture-required",
-		"--disable-features=HardwareMediaKeyHandling",
-		"about:blank",
-	}
-	command := exec.Command(executable, args...)
-	if err := command.Start(); err != nil {
-		return "", err
-	}
-	go func() { _ = command.Wait() }()
-
-	endpoint := fmt.Sprintf("http://127.0.0.1:%d", port)
-	deadline := time.Now().Add(20 * time.Second)
+func waitForDebugEndpoint(ctx context.Context, endpoint string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if _, err := probeBrowserEndpoint(ctx, endpoint); err == nil {
-			return endpoint, nil
+			return nil
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return ctx.Err()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	return "", errors.New("браузер не открыл порт отладки за 20 секунд")
+	return fmt.Errorf("порт отладки %s не открылся за %s", endpoint, timeout)
 }
 
 type browserVersion struct {
 	Browser              string `json:"Browser"`
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+}
+
+type jsonTarget struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 func probeBrowserEndpoint(ctx context.Context, endpoint string) (string, error) {
@@ -302,16 +254,17 @@ func probeBrowserInfo(ctx context.Context, endpoint string) (debugEndpoint, erro
 		return debugEndpoint{}, fmt.Errorf("порт отладки вернул HTTP %d", response.StatusCode)
 	}
 	var version browserVersion
-	if err := json.NewDecoder(response.Body).Decode(&version); err != nil {
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&version); err != nil {
 		return debugEndpoint{}, err
 	}
+	product := strings.ToLower(version.Browser)
 	if version.WebSocketDebuggerURL == "" ||
-		(!strings.Contains(strings.ToLower(version.Browser), "chrome") && !strings.Contains(strings.ToLower(version.Browser), "edg")) {
+		(!strings.Contains(product, "chrome") && !strings.Contains(product, "edg") && !strings.Contains(product, "webview")) {
 		return debugEndpoint{}, errors.New("на порту нет совместимого Chromium-браузера")
 	}
 	label := "Chromium"
-	if strings.Contains(strings.ToLower(version.Browser), "edg") {
-		label = "Microsoft Edge"
+	if strings.Contains(product, "edg") || strings.Contains(product, "webview") {
+		label = "Microsoft Edge WebView2"
 	}
 	return debugEndpoint{
 		URL:          endpoint,
@@ -321,159 +274,89 @@ func probeBrowserInfo(ctx context.Context, endpoint string) (debugEndpoint, erro
 	}, nil
 }
 
-type endpointSettings struct {
-	Endpoint string `json:"endpoint"`
-}
-
-func saveBrowserEndpoint(appDir, endpoint string) error {
-	data, err := json.Marshal(endpointSettings{Endpoint: endpoint})
-	if err != nil {
-		return err
+func existingPageTargetID(ctx context.Context, endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "http" || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost") {
+		return ""
 	}
-	return os.WriteFile(filepath.Join(appDir, "browser-debug.json"), data, 0o600)
-}
-
-func discoverBrowserEndpoints(ctx context.Context, appDir, platformID string) []debugEndpoint {
-	var endpoints []string
-	data, err := os.ReadFile(filepath.Join(appDir, "browser-debug.json"))
-	if err == nil {
-		var saved endpointSettings
-		if json.Unmarshal(data, &saved) == nil && saved.Endpoint != "" {
-			endpoints = append(endpoints, saved.Endpoint)
-		}
-	}
-
-	ports := []int{9222, 9333}
-	scanCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	requestCtx, cancel := context.WithTimeout(ctx, 800*time.Millisecond)
 	defer cancel()
-	script := `(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('msedge.exe','chrome.exe','browser.exe') } | Select-Object -ExpandProperty CommandLine) -join [Environment]::NewLine`
-	if output, err := exec.CommandContext(scanCtx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script).Output(); err == nil {
-		matches := regexp.MustCompile(`(?i)--remote-debugging-port(?:=|\s+)(\d+)`).FindAllStringSubmatch(string(output), -1)
-		for _, match := range matches {
-			if port, err := strconv.Atoi(match[1]); err == nil && port > 0 && port <= 65535 {
-				ports = append(ports, port)
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, strings.TrimRight(endpoint, "/")+"/json/list", nil)
+	if err != nil {
+		return ""
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var targets []jsonTarget
+	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&targets); err != nil {
+		return ""
+	}
+	for _, item := range targets {
+		switch item.Type {
+		case "page", "webview":
+			if item.ID != "" {
+				return item.ID
 			}
 		}
 	}
-	for _, port := range ports {
-		endpoints = append(endpoints, fmt.Sprintf("http://127.0.0.1:%d", port))
-	}
-
-	seen := make(map[string]struct{}, len(endpoints))
-	var preferred []debugEndpoint
-	var edge []debugEndpoint
-	for _, endpoint := range endpoints {
-		if _, exists := seen[endpoint]; exists {
-			continue
-		}
-		seen[endpoint] = struct{}{}
-		if info, err := probeBrowserInfo(ctx, endpoint); err == nil {
-			if strings.Contains(strings.ToLower(info.Product), "edg") {
-				if browserCompatible("edge", platformID) {
-					edge = append(edge, info)
-				}
-			} else {
-				preferred = append(preferred, info)
-			}
-		}
-	}
-	return append(preferred, edge...)
+	return ""
 }
 
-type browserCandidate struct {
-	Path  string
-	Kind  string
-	Label string
+const defaultChromeDesktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+var edgeUserAgentToken = regexp.MustCompile(`(?i)\s*(?:Edg(?:A|iOS)?|Edge?)\/[\d.]+`)
+
+func chromeLikeUserAgent(ua string) string {
+	ua = strings.TrimSpace(edgeUserAgentToken.ReplaceAllString(ua, ""))
+	if ua == "" {
+		return defaultChromeDesktopUA
+	}
+	return ua
 }
 
-func findChromiumCandidates(platformID string) []browserCandidate {
-	var candidates []browserCandidate
-	for _, name := range []string{"chrome.exe", "google-chrome", "chromium"} {
-		if path, err := exec.LookPath(name); err == nil {
-			kind, label := classifyBrowser(path)
-			candidates = append(candidates, browserCandidate{Path: path, Kind: kind, Label: label})
-		}
+func chromeVersionMajor(ua string) string {
+	if match := regexp.MustCompile(`Chrome/(\d+)`).FindStringSubmatch(ua); len(match) == 2 {
+		return match[1]
 	}
-
-	roots := []string{
-		os.Getenv("LOCALAPPDATA"),
-		os.Getenv("PROGRAMFILES(X86)"),
-		os.Getenv("PROGRAMFILES"),
-	}
-	for _, root := range roots {
-		if root == "" {
-			continue
-		}
-		candidates = append(candidates,
-			browserCandidate{Path: filepath.Join(root, "Google", "Chrome", "Application", "chrome.exe"), Kind: "chrome", Label: "Google Chrome"},
-			browserCandidate{Path: filepath.Join(root, "Yandex", "YandexBrowser", "Application", "browser.exe"), Kind: "yandex", Label: "Яндекс Браузер"},
-		)
-	}
-	for _, root := range roots {
-		if root != "" {
-			candidates = append(candidates,
-				browserCandidate{Path: filepath.Join(root, "Microsoft", "Edge", "Application", "msedge.exe"), Kind: "edge", Label: "Microsoft Edge"},
-			)
-		}
-	}
-	for _, name := range []string{"msedge.exe", "msedge"} {
-		if path, err := exec.LookPath(name); err == nil {
-			candidates = append(candidates, browserCandidate{Path: path, Kind: "edge", Label: "Microsoft Edge"})
-		}
-	}
-
-	result := make([]browserCandidate, 0, len(candidates))
-	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		if !browserCompatible(candidate.Kind, platformID) {
-			continue
-		}
-		if info, err := os.Stat(candidate.Path); err == nil && !info.IsDir() {
-			absolute, err := filepath.Abs(candidate.Path)
-			if err != nil {
-				absolute = candidate.Path
-			}
-			key := strings.ToLower(absolute)
-			if _, exists := seen[key]; !exists {
-				seen[key] = struct{}{}
-				candidate.Path = absolute
-				result = append(result, candidate)
-			}
-		}
-	}
-
-	return result
+	return "140"
 }
 
-func classifyBrowser(path string) (string, string) {
-	lower := strings.ToLower(path)
-	switch {
-	case strings.Contains(lower, "yandex") || filepath.Base(lower) == "browser.exe":
-		return "yandex", "Яндекс Браузер"
-	case strings.Contains(lower, "chrome"):
-		return "chrome", "Google Chrome"
-	default:
-		return "edge", "Microsoft Edge"
+func applyChromeUserAgent(ctx context.Context) error {
+	var ua string
+	if err := chromedp.Evaluate(`navigator.userAgent`, &ua).Do(ctx); err != nil || strings.TrimSpace(ua) == "" {
+		ua = defaultChromeDesktopUA
 	}
-}
-
-func browserCompatible(kind, platformID string) bool {
-	if kind == "edge" && platformID == "salutejazz" {
-		return false
+	chromeUA := chromeLikeUserAgent(ua)
+	major := chromeVersionMajor(chromeUA)
+	full := major + ".0.0.0"
+	brands := []*emulation.UserAgentBrandVersion{
+		{Brand: "Not A(Brand", Version: "8"},
+		{Brand: "Chromium", Version: major},
+		{Brand: "Google Chrome", Version: major},
 	}
-	return kind == "chrome" || kind == "yandex" || kind == "edge"
-}
-
-func firefoxInstalled() bool {
-	for _, root := range []string{os.Getenv("PROGRAMFILES"), os.Getenv("PROGRAMFILES(X86)"), os.Getenv("LOCALAPPDATA")} {
-		if root == "" {
-			continue
-		}
-		if info, err := os.Stat(filepath.Join(root, "Mozilla Firefox", "firefox.exe")); err == nil && !info.IsDir() {
-			return true
-		}
-	}
-	return false
+	return emulation.SetUserAgentOverride(chromeUA).
+		WithPlatform("Win32").
+		WithUserAgentMetadata(&emulation.UserAgentMetadata{
+			Brands: brands,
+			FullVersionList: []*emulation.UserAgentBrandVersion{
+				{Brand: "Not A(Brand", Version: "10.0.0.0"},
+				{Brand: "Chromium", Version: full},
+				{Brand: "Google Chrome", Version: full},
+			},
+			Platform:        "Windows",
+			PlatformVersion: "15.0.0",
+			Architecture:    "x86",
+			Model:           "",
+			Mobile:          false,
+			Bitness:         "64",
+			Wow64:           false,
+		}).Do(ctx)
 }
 
 const diagnosticsScript = `JSON.stringify(typeof window.__timerGetDiagnostics === 'function' ? window.__timerGetDiagnostics() : {error:'bridge missing'})`
@@ -484,6 +367,34 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   window.__timerInstallMediaBridge = __timerInstallMediaBridge;
   try {
     Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  } catch (_) {}
+  try {
+    const ua = String(navigator.userAgent || '').replace(/\sEdg(?:A|iOS)?\/[\d.]+/gi, '').replace(/\sEdge?\/[\d.]+/gi, '');
+    const chrome = (ua.match(/Chrome\/(\d+)/) || [])[1] || '140';
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => ua });
+    Object.defineProperty(navigator, 'appVersion', { configurable: true, get: () => ua.replace(/^Mozilla\//, '') });
+    Object.defineProperty(navigator, 'vendor', { configurable: true, get: () => 'Google Inc.' });
+    if (navigator.userAgentData) {
+      const brands = [
+        { brand: 'Not A(Brand', version: '8' },
+        { brand: 'Chromium', version: chrome },
+        { brand: 'Google Chrome', version: chrome }
+      ];
+      try { Object.defineProperty(navigator.userAgentData, 'brands', { configurable: true, get: () => brands }); } catch (_) {}
+      const originalHints = navigator.userAgentData.getHighEntropyValues && navigator.userAgentData.getHighEntropyValues.bind(navigator.userAgentData);
+      if (originalHints) {
+        navigator.userAgentData.getHighEntropyValues = async (hints) => {
+          const values = await originalHints(hints);
+          values.brands = brands;
+          values.fullVersionList = brands.map((item) => ({
+            brand: item.brand,
+            version: item.brand === 'Not A(Brand' ? '10.0.0.0' : chrome + '.0.0.0'
+          }));
+          values.uaFullVersion = chrome + '.0.0.0';
+          return values;
+        };
+      }
+    }
   } catch (_) {}
 
   window.__timerDebugLog = window.__timerDebugLog || [];

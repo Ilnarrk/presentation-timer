@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// This smoke test is opt-in because it opens a real Edge/Chrome window.
+// This smoke test is opt-in because it opens a real WebView2 (Windows) or Chromium window.
 func TestBrowserMediaBridgeSmoke(t *testing.T) {
 	if os.Getenv("RUN_BROWSER_SMOKE") != "1" {
 		t.Skip("set RUN_BROWSER_SMOKE=1 to run the real browser smoke test")

@@ -223,41 +223,63 @@ func TestWatchBrowserClearsUnexpectedlyClosedSession(t *testing.T) {
 	}
 }
 
-func TestDiscoverBrowserEndpointsUsesSavedEndpoint(t *testing.T) {
+func TestProbeBrowserInfoRejectsNonLocalEndpoint(t *testing.T) {
+	if _, err := probeBrowserInfo(context.Background(), "http://example.com:9222"); err == nil {
+		t.Fatal("probeBrowserInfo() unexpectedly accepted a non-local endpoint")
+	}
+}
+
+func TestProbeBrowserInfoUsesLocalEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/json/version" {
 			http.NotFound(writer, request)
 			return
 		}
 		_ = json.NewEncoder(writer).Encode(browserVersion{
-			Browser:              "Edg/140.0",
+			Browser:              "Chrome/140.0",
 			WebSocketDebuggerURL: "ws://127.0.0.1:12345/devtools/browser/test",
 		})
 	}))
 	defer server.Close()
 
-	appDir := t.TempDir()
-	if err := saveBrowserEndpoint(appDir, server.URL); err != nil {
-		t.Fatalf("saveBrowserEndpoint() error = %v", err)
+	info, err := probeBrowserInfo(context.Background(), server.URL)
+	if err != nil {
+		t.Fatalf("probeBrowserInfo() error = %v", err)
 	}
-	endpoints := discoverBrowserEndpoints(context.Background(), appDir, "telemost")
-	if len(endpoints) == 0 || endpoints[0].URL != server.URL {
-		t.Fatalf("endpoints = %v, want saved endpoint first", endpoints)
+	if info.WebSocketURL == "" || info.URL != server.URL {
+		t.Fatalf("info = %+v, want local websocket endpoint", info)
 	}
 }
 
-func TestBrowserCompatibility(t *testing.T) {
-	if browserCompatible("edge", "salutejazz") {
-		t.Fatal("Edge must not be used for SaluteJazz")
+func TestExistingPageTargetID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/json/list" {
+			http.NotFound(writer, request)
+			return
+		}
+		_ = json.NewEncoder(writer).Encode([]jsonTarget{
+			{ID: "background", Type: "service_worker"},
+			{ID: "page-1", Type: "page", URL: "about:blank"},
+		})
+	}))
+	defer server.Close()
+
+	if got := existingPageTargetID(context.Background(), server.URL); got != "page-1" {
+		t.Fatalf("existingPageTargetID() = %q, want page-1", got)
 	}
-	if !browserCompatible("chrome", "salutejazz") || !browserCompatible("yandex", "salutejazz") {
-		t.Fatal("Chrome and Yandex Browser must be supported for SaluteJazz")
+}
+
+func TestChromeLikeUserAgentStripsEdgeToken(t *testing.T) {
+	raw := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.3485.54"
+	got := chromeLikeUserAgent(raw)
+	if strings.Contains(strings.ToLower(got), "edg/") {
+		t.Fatalf("user agent still looks like Edge: %s", got)
 	}
-	if !browserCompatible("edge", "telemost") {
-		t.Fatal("Edge fallback should remain available for other platforms")
+	if !strings.Contains(got, "Chrome/140") {
+		t.Fatalf("user agent lost Chrome version: %s", got)
 	}
-	if !browserCompatible("edge", "generic") {
-		t.Fatal("Edge should remain available for on-prem platforms")
+	if chromeVersionMajor(got) != "140" {
+		t.Fatalf("chromeVersionMajor() = %s, want 140", chromeVersionMajor(got))
 	}
 }
 
