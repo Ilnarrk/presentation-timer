@@ -1,11 +1,11 @@
 {
-  "name": "presentation-timer",
-  "frontend:install": "npm install",
   "frontend:build": "npm run build",
+  "frontend:install": "npm install",
   "info": {
     "companyName": "Presentation Timer",
     "copyright": "Copyright 2026",
     "productName": "Таймер докладов",
-    "productVersion": "0.1.1"
-  }
+    "productVersion": "0.1.2"
+  },
+  "name": "presentation-timer"
 }

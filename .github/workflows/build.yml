@@ -78,6 +78,15 @@ jobs:
             exit 1
           }
 
+      - name: Установить версию из тега
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Синхронизация метаданных приложения
+        run: go run build/sync_app_config.go
+
       - name: Сборка приложения
         run: wails build --nsis
 

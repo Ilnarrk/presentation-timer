@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type appConfig struct {
@@ -54,6 +55,9 @@ func run(root string) error {
 	var app appConfig
 	if err := json.Unmarshal(appData, &app); err != nil {
 		return fmt.Errorf("parse %s: %w", appPath, err)
+	}
+	if version := strings.TrimSpace(os.Getenv("APP_VERSION")); version != "" {
+		app.Version = strings.TrimPrefix(version, "v")
 	}
 
 	out, err := json.MarshalIndent(app, "", "  ")
