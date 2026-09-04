@@ -158,6 +158,7 @@ func (a *App) SaveSettings(input settings.Settings) error {
 	}
 
 	a.applyAudioSettings(input)
+	a.applyConferenceReceiveSettings(input)
 	if a.engine != nil && (a.session == nil || !a.session.Active()) {
 		a.engine.UpdateConfig(a.timerConfigFromSettings(input))
 	}
@@ -214,6 +215,7 @@ func (a *App) ConnectConference(url, displayName string) (conference.State, erro
 	if a.conference == nil {
 		return conference.State{}, context.Canceled
 	}
+	a.conference.SetReceiveMuted(a.settings.Get().MuteConferenceReceive)
 	return a.conference.Connect(url, displayName)
 }
 
@@ -506,6 +508,21 @@ func durationFromParts(minutes, seconds int) time.Duration {
 func (a *App) applyAudioSettings(s settings.Settings) {
 	a.audio.SetDevice(s.DeviceID)
 	a.audio.SetVolume(s.Volume)
+}
+
+func (a *App) applyConferenceReceiveSettings(s settings.Settings) {
+	if a.conference == nil {
+		return
+	}
+	state := a.conference.GetState()
+	active := state.Phase == conference.PhaseOpening ||
+		state.Phase == conference.PhaseConnecting ||
+		state.Phase == conference.PhaseWaitingAdmission ||
+		state.Phase == conference.PhaseJoined ||
+		state.Phase == conference.PhasePlaying
+	if active {
+		a.conference.SetReceiveMuted(s.MuteConferenceReceive)
+	}
 }
 
 func (a *App) handleAlert(event timer.AlertEvent) {

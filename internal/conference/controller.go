@@ -19,10 +19,14 @@ type Controller struct {
 	browserCancel context.CancelFunc
 	browser       Browser
 	runID         uint64
+	receiveMuted  bool
 }
 
 func NewController(onChange func(State)) *Controller {
-	return &Controller{state: newStateStore(onChange)}
+	return &Controller{
+		state:        newStateStore(onChange),
+		receiveMuted: true,
+	}
 }
 
 func (c *Controller) GetState() State {
@@ -90,6 +94,7 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 	c.state.update(func(state *State) {
 		state.BrowserVisible = IsBrowserWindowVisible()
 	})
+	c.applyReceiveMuted(browser)
 	go c.watchBrowser(ctx, runID, browser.Done())
 
 	progress := func(phase Phase, message string) {
@@ -122,6 +127,7 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 		browserCancel()
 		return
 	}
+	c.applyReceiveMuted(browser)
 
 	<-ctx.Done()
 	browserCancel()
@@ -310,6 +316,35 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 		return errors.New("страница ВКС не приняла звуковой сигнал")
 	}
 	return nil
+}
+
+func (c *Controller) SetReceiveMuted(muted bool) {
+	c.mu.Lock()
+	c.receiveMuted = muted
+	browser := c.browser
+	c.mu.Unlock()
+
+	_ = setConferenceWebViewOutputMuted(muted)
+	if browser != nil {
+		c.evaluateReceiveMuted(browser, muted)
+	}
+}
+
+func (c *Controller) applyReceiveMuted(browser Browser) {
+	c.mu.Lock()
+	muted := c.receiveMuted
+	c.mu.Unlock()
+
+	_ = setConferenceWebViewOutputMuted(muted)
+	c.evaluateReceiveMuted(browser, muted)
+}
+
+func (c *Controller) evaluateReceiveMuted(browser Browser, muted bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	expression := fmt.Sprintf(setReceiveMutedScript, muted)
+	var ok bool
+	_ = browser.Evaluate(ctx, expression, &ok)
 }
 
 func (c *Controller) IsReady() bool {

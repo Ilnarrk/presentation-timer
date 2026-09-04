@@ -361,6 +361,8 @@ func applyChromeUserAgent(ctx context.Context) error {
 
 const diagnosticsScript = `JSON.stringify(typeof window.__timerGetDiagnostics === 'function' ? window.__timerGetDiagnostics() : {error:'bridge missing'})`
 
+const setReceiveMutedScript = `Boolean(window.__timerSetReceiveMuted && window.__timerSetReceiveMuted(%v))`
+
 const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   if (window.__presentationTimerBridgeInstalled) return;
   window.__presentationTimerBridgeInstalled = true;
@@ -402,6 +404,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   window.__timerLastAudioError = '';
   window.__presentationTimerMediaUsed = false;
   window.__timerPeerCount = 0;
+  window.__timerReceiveMuted = true;
   const log = (event, data) => {
     try {
       window.__timerDebugLog.push({ t: Date.now(), event, data: data || {} });
@@ -486,6 +489,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   const hardenAudioTrack = (track) => {
     if (!track || track.__timerHardened) return track;
     track.__timerHardened = true;
+    track.__timerSynthetic = true;
     const settings = {
       deviceId: 'presentation-timer',
       groupId: 'presentation-timer',
@@ -536,6 +540,41 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     return canvas.captureStream(1).getVideoTracks()[0];
   };
 
+  const muteRemoteMediaElement = (el) => {
+    if (!el || el.__timerAllowedMedia || !window.__timerReceiveMuted) return;
+    try {
+      el.muted = true;
+      el.volume = 0;
+      el.__timerRemoteMuted = true;
+    } catch (_) {}
+  };
+
+  const muteRemoteTrack = (track) => {
+    if (!track || track.kind !== 'audio' || track.__timerSynthetic || !window.__timerReceiveMuted) return;
+    try { track.enabled = false; } catch (_) {}
+  };
+
+  const suppressRemotePlayback = () => {
+    if (!window.__timerReceiveMuted) return;
+    try {
+      document.querySelectorAll('audio, video').forEach(muteRemoteMediaElement);
+    } catch (_) {}
+  };
+
+  window.__timerSetReceiveMuted = (muted) => {
+    window.__timerReceiveMuted = Boolean(muted);
+    log('receive.muted', { muted: window.__timerReceiveMuted });
+    if (window.__timerReceiveMuted) suppressRemotePlayback();
+    document.querySelectorAll('iframe').forEach((frame) => {
+      try {
+        injectIntoFrame(frame);
+        const child = frame.contentWindow;
+        if (child && child !== window && child.__timerSetReceiveMuted) child.__timerSetReceiveMuted(muted);
+      } catch (_) {}
+    });
+    return true;
+  };
+
   const virtualMic = () => ({
     deviceId: 'presentation-timer',
     groupId: 'presentation-timer',
@@ -572,7 +611,16 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     window.RTCPeerConnection = function(...args) {
       window.__timerPeerCount = (window.__timerPeerCount || 0) + 1;
       log('rtc.create', { count: window.__timerPeerCount });
-      return new OriginalRTC(...args);
+      const pc = new OriginalRTC(...args);
+      pc.addEventListener('track', (event) => {
+        if (event.track) muteRemoteTrack(event.track);
+        if (event.streams) {
+          event.streams.forEach((stream) => {
+            stream.getAudioTracks().forEach(muteRemoteTrack);
+          });
+        }
+      });
+      return pc;
     };
     window.RTCPeerConnection.prototype = OriginalRTC.prototype;
   }
@@ -667,7 +715,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchIframes);
   else watchIframes();
 
-  setInterval(() => { resumeContext(); updateLevel(); injectChildFrames(); }, 2000);
+  setInterval(() => { resumeContext(); updateLevel(); injectChildFrames(); suppressRemotePlayback(); }, 2000);
   ['click', 'keydown', 'pointerdown'].forEach((name) => {
     window.addEventListener(name, () => { resumeContext(); }, true);
   });

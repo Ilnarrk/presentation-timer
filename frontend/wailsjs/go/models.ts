@@ -210,6 +210,7 @@ export namespace settings {
 	    deviceId: string;
 	    volume: number;
 	    muteConferenceSound: boolean;
+	    muteConferenceReceive: boolean;
 	    sessionTotalMinutes: number;
 	    sessionTotalSeconds: number;
 	    sessionSpeakerCount: number;
@@ -240,6 +241,7 @@ export namespace settings {
 	        this.deviceId = source["deviceId"];
 	        this.volume = source["volume"];
 	        this.muteConferenceSound = source["muteConferenceSound"];
+	        this.muteConferenceReceive = source["muteConferenceReceive"];
 	        this.sessionTotalMinutes = source["sessionTotalMinutes"];
 	        this.sessionTotalSeconds = source["sessionTotalSeconds"];
 	        this.sessionSpeakerCount = source["sessionSpeakerCount"];

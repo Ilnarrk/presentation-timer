@@ -268,6 +268,7 @@ function App() {
   const [deviceId, setDeviceId] = useState('default');
   const [volume, setVolume] = useState(0.85);
   const [muteConferenceSound, setMuteConferenceSound] = useState(false);
+  const [muteConferenceReceive, setMuteConferenceReceive] = useState(true);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [sounds, setSounds] = useState<SoundOption[]>([]);
   const [conferenceUrl, setConferenceUrl] = useState('');
@@ -362,6 +363,7 @@ function App() {
       deviceId: next?.deviceId ?? deviceId,
       volume: next?.volume ?? volume,
       muteConferenceSound: next?.muteConferenceSound ?? muteConferenceSound,
+      muteConferenceReceive: next?.muteConferenceReceive ?? muteConferenceReceive,
     });
 
     setSaving(true);
@@ -369,6 +371,7 @@ function App() {
       await SaveSettings(payload);
       const saved = settings.Settings.createFrom(await GetSettings());
       setMuteConferenceSound(saved.muteConferenceSound ?? false);
+      setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setError('');
@@ -391,6 +394,7 @@ function App() {
     talkSecondsPart,
     volume,
     muteConferenceSound,
+    muteConferenceReceive,
   ]);
 
   useEffect(() => {
@@ -429,6 +433,7 @@ function App() {
       setDeviceId(initialSettings.deviceId);
       setVolume(initialSettings.volume);
       setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
+      setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
@@ -1331,9 +1336,23 @@ function App() {
                     await persistSettings({ muteConferenceSound: next });
                   }}
                 />
-                <span>Не воспроизводить звук на этом компьютере</span>
+                <span>Не воспроизводить сигналы таймера на этом компьютере</span>
               </label>
-              <p className="settings-hint">Звук будет передаваться только через участника ВКС, без дублирования на колонках.</p>              
+              <p className="settings-hint">Сигналы таймера будут передаваться только через участника ВКС, без дублирования на колонках.</p>
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={muteConferenceReceive}
+                  disabled={settingsLocked}
+                  onChange={async (e) => {
+                    const next = e.target.checked;
+                    setMuteConferenceReceive(next);
+                    await persistSettings({ muteConferenceReceive: next });
+                  }}
+                />
+                <span>Не воспроизводить звук участников в окне ВКС таймера</span>
+              </label>
+              <p className="settings-hint">Отключает голоса докладчиков в окне браузера таймера. Рекомендуется, если модератор уже слушает встречу в основном браузере.</p>
             </div>
 
             <button type="button" className="about-link" onClick={() => setAboutOpen(true)}>

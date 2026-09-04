@@ -21,8 +21,27 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	if got.ReminderMinutes != 2 || got.ReminderSeconds != 0 {
 		t.Fatalf("old settings did not receive reminder default: %+v", got)
 	}
+	if !got.MuteConferenceReceive {
+		t.Fatalf("old settings did not receive muteConferenceReceive default: %+v", got)
+	}
 	if got.QuestionsSoundID != "" || got.NextSoundID != "" {
 		t.Fatalf("explicitly empty cue settings changed: %+v", got)
+	}
+}
+
+func TestMuteConferenceReceiveRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.MuteConferenceReceive = false
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.MuteConferenceReceive {
+		t.Fatalf("expected muteConferenceReceive=false, got %+v", got)
 	}
 }
 
