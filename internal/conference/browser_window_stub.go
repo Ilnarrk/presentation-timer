@@ -11,3 +11,7 @@ func isBrowserWindowVisible() bool {
 }
 
 func setMainWindowRaiseHandler(_ func()) {}
+
+func setMainWindowBoundsProvider(_ func() (int, int, int, int)) {}
+
+func setMainWindowMoveHandler(_ func(int, int)) {}

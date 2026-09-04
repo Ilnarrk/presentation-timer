@@ -23,6 +23,9 @@ import (
 const (
 	conferenceWindowClass = "PresentationTimerConferenceWebView"
 
+	conferenceWindowWidth  = 1200
+	conferenceWindowHeight = 800
+
 	wmDestroy       = 0x0002
 	wmSize          = 0x0005
 	wmClose         = 0x0010
@@ -275,6 +278,7 @@ func runConferenceWebView(ctx context.Context, session *conferenceSession, profi
 	chromium.SetBackgroundColour(15, 18, 24, 255)
 	_ = chromium.Show()
 	chromium.Resize()
+	alignConferenceWindow(hwnd)
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
 	procSetFocus.Call(hwnd)
@@ -350,8 +354,8 @@ func createConferenceWindow() (uintptr, error) {
 		wsOverlappedWin|wsClipChildren,
 		100,
 		80,
-		1200,
-		800,
+		conferenceWindowWidth,
+		conferenceWindowHeight,
 		0,
 		0,
 		instance,
@@ -409,6 +413,38 @@ func setWindowTopmost(hwnd uintptr, topmost bool) {
 	procSetWindowPos.Call(hwnd, insertAfter, 0, 0, 0, 0, flags)
 }
 
+func alignConferenceWindow(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	mainX, mainY, _, mainH := getMainWindowBounds()
+	if mainH <= 0 {
+		return
+	}
+
+	browserW := conferenceWindowWidth
+	browserH := mainH
+	browserX := mainX - browserW
+	browserY := mainY
+	if browserX < 0 {
+		shift := -browserX
+		browserX = 0
+		if mainWindowMoveHandler != nil {
+			mainWindowMoveHandler(mainX+shift, mainY)
+		}
+	}
+
+	procSetWindowPos.Call(
+		hwnd,
+		hwndTopmost,
+		uintptr(browserX),
+		uintptr(browserY),
+		uintptr(browserW),
+		uintptr(browserH),
+		swpNoactivate,
+	)
+}
+
 func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	var session *conferenceSession
 	if value, ok := conferenceWins.Load(hwnd); ok {
@@ -417,6 +453,7 @@ func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	switch msg {
 	case wmAppSetVisible:
 		if wparam != 0 {
+			alignConferenceWindow(hwnd)
 			procShowWindow.Call(hwnd, swShow)
 			setWindowTopmost(hwnd, true)
 			raiseMainWindow()
