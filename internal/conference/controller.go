@@ -87,6 +87,9 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 	joinCtx, joinCancel := context.WithCancel(ctx)
 	c.joinCancel = joinCancel
 	c.mu.Unlock()
+	c.state.update(func(state *State) {
+		state.BrowserVisible = IsBrowserWindowVisible()
+	})
 	go c.watchBrowser(ctx, runID, browser.Done())
 
 	progress := func(phase Phase, message string) {
@@ -150,7 +153,29 @@ func (c *Controller) Disconnect() {
 		state.Phase = PhaseLeft
 		state.Message = "Участник отключён"
 		state.Tested = false
+		state.BrowserVisible = false
 	})
+}
+
+func (c *Controller) SetBrowserWindowVisible(visible bool) error {
+	c.mu.Lock()
+	active := c.browser != nil && c.cancel != nil
+	c.mu.Unlock()
+	if !active {
+		return ErrNotJoined
+	}
+	if err := SetBrowserWindowVisible(visible); err != nil {
+		return err
+	}
+	c.state.update(func(state *State) {
+		state.BrowserVisible = visible
+		if visible {
+			state.Message = "Окно браузера ВКС показано"
+		} else {
+			state.Message = "Окно браузера ВКС скрыто"
+		}
+	})
+	return nil
 }
 
 func (c *Controller) ConfirmJoined() error {
@@ -348,6 +373,7 @@ func (c *Controller) failSession(runID uint64, message string) {
 		state.Phase = PhaseError
 		state.Message = message
 		state.Tested = false
+		state.BrowserVisible = false
 	})
 }
 

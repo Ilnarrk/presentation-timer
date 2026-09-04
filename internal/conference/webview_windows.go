@@ -16,47 +16,68 @@ import (
 
 	"github.com/wailsapp/go-webview2/pkg/edge"
 	"golang.org/x/sys/windows"
+
+	"timer/internal/buildinfo"
 )
 
 const (
 	conferenceWindowClass = "PresentationTimerConferenceWebView"
-	conferenceWindowTitle = "Presentation Timer — ВКС"
 
 	wmDestroy       = 0x0002
 	wmSize          = 0x0005
 	wmClose         = 0x0010
+	wmSetIcon       = 0x0080
+	wmAppSetVisible = 0x8001
 	sizeMinimized   = 1
+	swHide          = 0
 	swShow          = 5
 	csHRedraw       = 0x0002
 	csVRedraw       = 0x0001
 	wsOverlappedWin = 0x00CF0000
 	wsClipChildren  = 0x02000000
+	iconSmall       = 0
+	iconBig         = 1
 	idcArrow        = 32512
 	colorWindow     = 5
 	coInitApartment = 0x2
 	classExists     = 1410
+	iconResourceID  = 1
+
+	dwmwaUseImmersiveDarkModeBefore20h1 = 19
+	dwmwaUseImmersiveDarkMode           = 20
+	dwmwaCaptionColor                   = 35
+	dwmwaTextColor                      = 36
+	dwmwaBorderColor                    = 34
+
+	titleBarColorBGR = 0x0018120f // #0f1218
+	titleTextColor   = 0x00ffffff
+	borderColorBGR   = 0x00202830
 )
 
 var (
 	user32   = windows.NewLazySystemDLL("user32")
 	kernel32 = windows.NewLazySystemDLL("kernel32")
 	ole32    = windows.NewLazySystemDLL("ole32")
+	dwmapi   = windows.NewLazySystemDLL("dwmapi")
 
-	procRegisterClassExW = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW  = user32.NewProc("CreateWindowExW")
-	procDestroyWindow    = user32.NewProc("DestroyWindow")
-	procShowWindow       = user32.NewProc("ShowWindow")
-	procUpdateWindow     = user32.NewProc("UpdateWindow")
-	procSetFocus         = user32.NewProc("SetFocus")
-	procGetMessageW      = user32.NewProc("GetMessageW")
-	procTranslateMessage = user32.NewProc("TranslateMessage")
-	procDispatchMessageW = user32.NewProc("DispatchMessageW")
-	procDefWindowProcW   = user32.NewProc("DefWindowProcW")
-	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	procPostMessageW     = user32.NewProc("PostMessageW")
-	procLoadCursorW      = user32.NewProc("LoadCursorW")
-	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
-	procCoInitializeEx   = ole32.NewProc("CoInitializeEx")
+	procRegisterClassExW      = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW       = user32.NewProc("CreateWindowExW")
+	procDestroyWindow         = user32.NewProc("DestroyWindow")
+	procShowWindow            = user32.NewProc("ShowWindow")
+	procUpdateWindow          = user32.NewProc("UpdateWindow")
+	procSetFocus              = user32.NewProc("SetFocus")
+	procGetMessageW           = user32.NewProc("GetMessageW")
+	procTranslateMessage      = user32.NewProc("TranslateMessage")
+	procDispatchMessageW      = user32.NewProc("DispatchMessageW")
+	procDefWindowProcW        = user32.NewProc("DefWindowProcW")
+	procPostQuitMessage       = user32.NewProc("PostQuitMessage")
+	procPostMessageW          = user32.NewProc("PostMessageW")
+	procSendMessageW          = user32.NewProc("SendMessageW")
+	procLoadCursorW           = user32.NewProc("LoadCursorW")
+	procLoadIconW             = user32.NewProc("LoadIconW")
+	procGetModuleHandleW      = kernel32.NewProc("GetModuleHandleW")
+	procCoInitializeEx        = ole32.NewProc("CoInitializeEx")
+	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
 
 	wndProcCallback = syscall.NewCallback(conferenceWndProc)
 	classOnce       sync.Once
@@ -96,6 +117,7 @@ type conferenceSession struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	doneOnce  sync.Once
+	visible   atomic.Bool
 }
 
 func (s *conferenceSession) close() {
@@ -108,6 +130,18 @@ func (s *conferenceSession) close() {
 
 func (s *conferenceSession) signalDone() {
 	s.doneOnce.Do(func() { close(s.done) })
+}
+
+func (s *conferenceSession) setVisible(visible bool) {
+	hwnd := atomic.LoadUintptr(&s.hwnd)
+	if hwnd == 0 {
+		return
+	}
+	wp := uintptr(0)
+	if visible {
+		wp = 1
+	}
+	procPostMessageW.Call(hwnd, wmAppSetVisible, wp, 0)
 }
 
 func startConferenceWebView(ctx context.Context, profileDir string) (*conferenceSession, error) {
@@ -179,7 +213,12 @@ func runConferenceWebView(ctx context.Context, session *conferenceSession, profi
 	}
 	atomic.StoreUintptr(&session.hwnd, hwnd)
 	conferenceWins.Store(hwnd, session)
-	defer conferenceWins.Delete(hwnd)
+	styleConferenceWindow(hwnd)
+	registerBrowserWindow(session)
+	defer func() {
+		unregisterBrowserWindow(session)
+		conferenceWins.Delete(hwnd)
+	}()
 
 	chromium := edge.NewChromium()
 	chromium.DataPath = profileDir
@@ -227,6 +266,7 @@ func runConferenceWebView(ctx context.Context, session *conferenceSession, profi
 		}
 		_ = settings.PutUserAgent(chromeLikeUserAgent(ua))
 	}
+	chromium.SetBackgroundColour(15, 18, 24, 255)
 	_ = chromium.Show()
 	chromium.Resize()
 	procShowWindow.Call(hwnd, swShow)
@@ -258,6 +298,7 @@ func registerConferenceClass() error {
 	classOnce.Do(func() {
 		instance, _, _ := procGetModuleHandleW.Call(0)
 		cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
+		windowIcon := loadConferenceWindowIcon()
 		name, err := windows.UTF16PtrFromString(conferenceWindowClass)
 		if err != nil {
 			classErr = err
@@ -268,9 +309,11 @@ func registerConferenceClass() error {
 			style:         csHRedraw | csVRedraw,
 			lpfnWndProc:   wndProcCallback,
 			hInstance:     windows.Handle(instance),
+			hIcon:         windows.Handle(windowIcon),
 			hCursor:       windows.Handle(cursor),
 			hbrBackground: windows.Handle(colorWindow + 1),
 			lpszClassName: name,
+			hIconSm:       windows.Handle(windowIcon),
 		}
 		atom, _, callErr := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
 		if atom == 0 {
@@ -288,7 +331,7 @@ func createConferenceWindow() (uintptr, error) {
 	if err != nil {
 		return 0, err
 	}
-	title, err := windows.UTF16PtrFromString(conferenceWindowTitle)
+	title, err := windows.UTF16PtrFromString(conferenceWindowTitle())
 	if err != nil {
 		return 0, err
 	}
@@ -313,12 +356,55 @@ func createConferenceWindow() (uintptr, error) {
 	return hwnd, nil
 }
 
+func conferenceWindowTitle() string {
+	return buildinfo.Get().Name + " — ВКС"
+}
+
+func styleConferenceWindow(hwnd uintptr) {
+	windowIcon := loadConferenceWindowIcon()
+	if windowIcon != 0 {
+		procSendMessageW.Call(hwnd, wmSetIcon, iconBig, windowIcon)
+		procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, windowIcon)
+	}
+
+	darkMode := int32(1)
+	procDwmSetWindowAttribute.Call(
+		hwnd,
+		uintptr(dwmwaUseImmersiveDarkMode),
+		uintptr(unsafe.Pointer(&darkMode)),
+		unsafe.Sizeof(darkMode),
+	)
+	procDwmSetWindowAttribute.Call(
+		hwnd,
+		uintptr(dwmwaUseImmersiveDarkModeBefore20h1),
+		uintptr(unsafe.Pointer(&darkMode)),
+		unsafe.Sizeof(darkMode),
+	)
+
+	caption := int32(titleBarColorBGR)
+	text := int32(titleTextColor)
+	border := int32(borderColorBGR)
+	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaCaptionColor), uintptr(unsafe.Pointer(&caption)), unsafe.Sizeof(caption))
+	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaTextColor), uintptr(unsafe.Pointer(&text)), unsafe.Sizeof(text))
+	procDwmSetWindowAttribute.Call(hwnd, uintptr(dwmwaBorderColor), uintptr(unsafe.Pointer(&border)), unsafe.Sizeof(border))
+}
+
 func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	var session *conferenceSession
 	if value, ok := conferenceWins.Load(hwnd); ok {
 		session = value.(*conferenceSession)
 	}
 	switch msg {
+	case wmAppSetVisible:
+		if wparam != 0 {
+			procShowWindow.Call(hwnd, swShow)
+		} else {
+			procShowWindow.Call(hwnd, swHide)
+		}
+		if session != nil {
+			session.visible.Store(wparam != 0)
+		}
+		return 0
 	case wmSize:
 		if wparam != sizeMinimized && session != nil && session.chromium != nil {
 			session.chromium.Resize()

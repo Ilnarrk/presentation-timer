@@ -353,6 +353,19 @@ button {
   justify-content: space-between;
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+}
+
+.app-footer-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 28px;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .app-version {
   color: #626b80;
   font-size: 0.78rem;
@@ -385,6 +398,25 @@ button {
   font-size: 0.76rem;
   cursor: pointer;
   transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.conference-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.conference-browser-toggle {
+  flex: 0 0 auto;
+  border-color: rgba(125, 147, 255, 0.22);
+  background: rgba(101, 125, 240, 0.12);
+  color: #9db0ff;
+}
+
+.conference-browser-toggle.is-visible {
+  border-color: rgba(126, 135, 157, 0.24);
+  background: rgba(255, 255, 255, 0.04);
+  color: #8f98ad;
 }
 
 .conference-badge:hover {

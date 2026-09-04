@@ -42,6 +42,15 @@ func main() {
 		Windows: &windows.Options{
 			WebviewIsTransparent: false,
 			WindowIsTranslucent:  false,
+			Theme:                windows.Dark,
+			CustomTheme: &windows.ThemeSettings{
+				DarkModeTitleBar:          0x0018120f, // #0f1218
+				DarkModeTitleBarInactive:  0x0018120f,
+				DarkModeTitleText:         0x00ffffff,
+				DarkModeTitleTextInactive: 0x00b8a8a0,
+				DarkModeBorder:            0x00302820, // #202830
+				DarkModeBorderInactive:    0x00302820,
+			},
 		},
 	})
 

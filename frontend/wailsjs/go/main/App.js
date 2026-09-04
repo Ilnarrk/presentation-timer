@@ -78,6 +78,10 @@ export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
 }
 
+export function SetConferenceBrowserVisible(arg1) {
+  return window['go']['main']['App']['SetConferenceBrowserVisible'](arg1);
+}
+
 export function Start() {
   return window['go']['main']['App']['Start']();
 }

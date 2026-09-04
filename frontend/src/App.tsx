@@ -19,6 +19,7 @@ import {
   PreviewSound,
   Reset,
   SaveSettings,
+  SetConferenceBrowserVisible,
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
@@ -63,6 +64,7 @@ interface ConferenceState {
   displayUrl: string;
   message: string;
   tested: boolean;
+  browserVisible: boolean;
   updatedAt: number;
 }
 
@@ -72,6 +74,7 @@ const initialConferenceState: ConferenceState = {
   displayUrl: '',
   message: 'Участник не подключён',
   tested: false,
+  browserVisible: false,
   updatedAt: 0,
 };
 
@@ -400,6 +403,19 @@ function App() {
     }
   };
 
+  const handleConferenceBrowserToggle = async () => {
+    setConferenceBusy(true);
+    try {
+      const state = await SetConferenceBrowserVisible(!conferenceState.browserVisible);
+      setConferenceState(state as ConferenceState);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setConferenceBusy(false);
+    }
+  };
+
   const handleConferenceDiagnostics = async () => {
     setConferenceBusy(true);
     try {
@@ -427,7 +443,7 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close') => {
+  const icon = (name: 'play' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       pause: <><path d="M8 6.5h3v11H8z" /><path d="M14 6.5h3v11h-3z" /></>,
@@ -438,6 +454,8 @@ function App() {
       upload: <><path d="M12 16V4" /><path d="m7.5 8.5 4.5-4.5 4.5 4.5" /><path d="M5 14v5h14v-5" /></>,
       settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
       close: <><path d="m7 7 10 10" /><path d="M17 7 7 17" /></>,
+      browserShow: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><circle cx="6.5" cy="7.5" r="0.8" fill="currentColor" stroke="none" /><circle cx="9" cy="7.5" r="0.8" fill="currentColor" stroke="none" /></>,
+      browserHide: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><path d="M8 15h8" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -471,21 +489,35 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <span className="app-version" title={appInfo.name}>v{appInfo.version}</span>
+        <div className="topbar-left">
+          {conferenceActive && (
+            <button
+              className={`icon-button quiet conference-browser-toggle${conferenceState.browserVisible ? ' is-visible' : ''}`}
+              disabled={conferenceBusy}
+              onClick={handleConferenceBrowserToggle}
+              aria-label={conferenceState.browserVisible ? 'Скрыть окно браузера ВКС' : 'Показать окно браузера ВКС'}
+              title={conferenceState.browserVisible ? 'Скрыть окно ВКС' : 'Показать окно ВКС'}
+            >
+              {icon(conferenceState.browserVisible ? 'browserHide' : 'browserShow')}
+            </button>
+          )}
+        </div>
         <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
           {icon('settings')}
         </button>
       </header>
 
       <main className="timer-stage">
-        <button
-          className={`conference-badge conference-${conferenceState.phase}`}
-          onClick={() => setConnectionPromptOpen(true)}
-          title="Настроить подключение к ВКС"
-        >
-          <span className="connection-dot" />
-          <span>{conferencePhaseLabels[conferenceState.phase]}</span>
-        </button>
+        <div className="conference-toolbar">
+          <button
+            className={`conference-badge conference-${conferenceState.phase}`}
+            onClick={() => setConnectionPromptOpen(true)}
+            title="Настроить подключение к ВКС"
+          >
+            <span className="connection-dot" />
+            <span>{conferencePhaseLabels[conferenceState.phase]}</span>
+          </button>
+        </div>
 
         <section className={`timer-ring ${statusClass}`}>
           <svg className="progress-ring" viewBox="0 0 320 320" aria-hidden="true">
@@ -535,6 +567,10 @@ function App() {
         {error && <div className="error-toast">{error}</div>}
       </main>
 
+      <footer className="app-footer-bar">
+        <span className="app-version" title={appInfo.name}>v{appInfo.version}</span>
+      </footer>
+
       {connectionPromptOpen && (
         <div className="modal-backdrop" role="presentation">
           <section className="modal connection-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
@@ -552,26 +588,36 @@ function App() {
                     <button className="text-button secondary" onClick={() => setConnectionPromptOpen(false)}>Пропустить</button>
                     <button className="text-button primary" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
                   </>
-                ) : conferenceJoined ? (
+                ) : conferenceActive ? (
                   <div className="conference-icon-actions">
-                    <button
-                      className="icon-button conference-test-button"
-                      disabled={conferenceBusy}
-                      onClick={handleConferenceTest}
-                      aria-label="Проверить звук в ВКС"
-                      title="Проверить звук в ВКС"
-                    >
-                      {icon('play')}
-                    </button>
-                    <button
-                      className="icon-button conference-disconnect-button"
-                      disabled={conferenceBusy}
-                      onClick={handleConferenceDisconnect}
-                      aria-label="Отключиться от ВКС"
-                      title="Отключиться"
-                    >
-                      {icon('disconnect')}
-                    </button>
+                    {conferenceJoined ? (
+                      <>
+                        <button
+                          className="icon-button conference-test-button"
+                          disabled={conferenceBusy}
+                          onClick={handleConferenceTest}
+                          aria-label="Проверить звук в ВКС"
+                          title="Проверить звук в ВКС"
+                        >
+                          {icon('play')}
+                        </button>
+                        <button
+                          className="icon-button conference-disconnect-button"
+                          disabled={conferenceBusy}
+                          onClick={handleConferenceDisconnect}
+                          aria-label="Отключиться от ВКС"
+                          title="Отключиться"
+                        >
+                          {icon('disconnect')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
+                          <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
+                        )}
+                      </>
+                    )}
                     {import.meta.env.DEV && (
                       <button
                         className="text-button secondary compact-button"
@@ -582,16 +628,7 @@ function App() {
                       </button>
                     )}
                   </div>
-                ) : (
-                  <>
-                    {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
-                      <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
-                    )}
-                    {import.meta.env.DEV && (
-                      <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceDiagnostics}>Диагностика</button>
-                    )}
-                  </>
-                )}
+                ) : null}
               </div>
               {conferenceJoined && (
                 <div className={`conference-test-state ${conferenceState.tested ? 'is-ready' : ''}`}>

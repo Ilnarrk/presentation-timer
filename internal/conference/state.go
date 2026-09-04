@@ -26,12 +26,13 @@ var (
 )
 
 type State struct {
-	Phase      Phase  `json:"phase"`
-	Platform   string `json:"platform"`
-	DisplayURL string `json:"displayUrl"`
-	Message    string `json:"message"`
-	Tested     bool   `json:"tested"`
-	UpdatedAt  int64  `json:"updatedAt"`
+	Phase          Phase  `json:"phase"`
+	Platform       string `json:"platform"`
+	DisplayURL     string `json:"displayUrl"`
+	Message        string `json:"message"`
+	Tested         bool   `json:"tested"`
+	BrowserVisible bool   `json:"browserVisible"`
+	UpdatedAt      int64  `json:"updatedAt"`
 }
 
 func newState() State {

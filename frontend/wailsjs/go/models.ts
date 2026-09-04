@@ -78,6 +78,7 @@ export namespace conference {
 	    displayUrl: string;
 	    message: string;
 	    tested: boolean;
+	    browserVisible: boolean;
 	    updatedAt: number;
 	
 	    static createFrom(source: any = {}) {
@@ -91,6 +92,7 @@ export namespace conference {
 	        this.displayUrl = source["displayUrl"];
 	        this.message = source["message"];
 	        this.tested = source["tested"];
+	        this.browserVisible = source["browserVisible"];
 	        this.updatedAt = source["updatedAt"];
 	    }
 	}

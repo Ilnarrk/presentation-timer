@@ -202,6 +202,16 @@ func (a *App) ConfirmConferenceJoined() error {
 	return a.conference.ConfirmJoined()
 }
 
+func (a *App) SetConferenceBrowserVisible(visible bool) (conference.State, error) {
+	if a.conference == nil {
+		return conference.State{Phase: conference.PhaseIdle}, conference.ErrNotJoined
+	}
+	if err := a.conference.SetBrowserWindowVisible(visible); err != nil {
+		return a.conference.GetState(), err
+	}
+	return a.conference.GetState(), nil
+}
+
 func (a *App) GetConferenceDiagnostics() (string, error) {
 	if a.conference == nil {
 		return "", conference.ErrNotJoined
