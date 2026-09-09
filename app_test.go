@@ -45,3 +45,17 @@ func TestShouldPlayLocalSound(t *testing.T) {
 		t.Fatal("muted settings should not play locally")
 	}
 }
+
+// TestConferenceTestUsesLocalSoundRule documents that TestConferenceSound,
+// handleAlert, and playConferenceCue all gate local playback through shouldPlayLocalSound.
+func TestConferenceTestUsesLocalSoundRule(t *testing.T) {
+	unmuted := settings.Settings{MuteConferenceSound: false}
+	muted := settings.Settings{MuteConferenceSound: true}
+
+	if !shouldPlayLocalSound(unmuted) {
+		t.Fatal("conference test should play locally when muteConferenceSound is false")
+	}
+	if shouldPlayLocalSound(muted) {
+		t.Fatal("conference test should skip local playback when muteConferenceSound is true")
+	}
+}

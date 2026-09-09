@@ -268,6 +268,12 @@ func (a *App) TestConferenceSound(soundID string) error {
 	if soundID == "" {
 		soundID = s.SoundID
 	}
+	if shouldPlayLocalSound(s) {
+		if err := a.audio.Play(soundID); err != nil {
+			runtime.LogErrorf(a.ctx, "local conference test playback failed: %v", err)
+			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
+		}
+	}
 	wav, err := a.catalog.Render(soundID, s.Volume)
 	if err != nil {
 		return err
