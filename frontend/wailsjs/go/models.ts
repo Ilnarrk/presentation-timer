@@ -79,6 +79,7 @@ export namespace conference {
 	    message: string;
 	    tested: boolean;
 	    browserVisible: boolean;
+	    cameraEnabled: boolean;
 	    updatedAt: number;
 	
 	    static createFrom(source: any = {}) {
@@ -93,6 +94,7 @@ export namespace conference {
 	        this.message = source["message"];
 	        this.tested = source["tested"];
 	        this.browserVisible = source["browserVisible"];
+	        this.cameraEnabled = source["cameraEnabled"];
 	        this.updatedAt = source["updatedAt"];
 	    }
 	}
@@ -211,6 +213,7 @@ export namespace settings {
 	    volume: number;
 	    muteConferenceSound: boolean;
 	    muteConferenceReceive: boolean;
+	    conferenceCameraEnabled: boolean;
 	    sessionTotalMinutes: number;
 	    sessionTotalSeconds: number;
 	    sessionSpeakerCount: number;
@@ -242,6 +245,7 @@ export namespace settings {
 	        this.volume = source["volume"];
 	        this.muteConferenceSound = source["muteConferenceSound"];
 	        this.muteConferenceReceive = source["muteConferenceReceive"];
+	        this.conferenceCameraEnabled = source["conferenceCameraEnabled"];
 	        this.sessionTotalMinutes = source["sessionTotalMinutes"];
 	        this.sessionTotalSeconds = source["sessionTotalSeconds"];
 	        this.sessionSpeakerCount = source["sessionSpeakerCount"];

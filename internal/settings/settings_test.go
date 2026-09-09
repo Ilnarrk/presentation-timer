@@ -29,6 +29,22 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	}
 }
 
+func TestConferenceCameraEnabledRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.ConferenceCameraEnabled = true
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if !got.ConferenceCameraEnabled {
+		t.Fatalf("expected conferenceCameraEnabled=true, got %+v", got)
+	}
+}
+
 func TestMuteConferenceReceiveRoundTrip(t *testing.T) {
 	store := &Store{
 		path:     filepath.Join(t.TempDir(), "settings.json"),

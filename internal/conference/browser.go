@@ -363,6 +363,8 @@ const diagnosticsScript = `JSON.stringify(typeof window.__timerGetDiagnostics ==
 
 const setReceiveMutedScript = `Boolean(window.__timerSetReceiveMuted && window.__timerSetReceiveMuted(%v))`
 
+const setCameraEnabledScript = `Boolean(window.__timerSetCameraEnabled && window.__timerSetCameraEnabled(%v))`
+
 const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   if (window.__presentationTimerBridgeInstalled) return;
   window.__presentationTimerBridgeInstalled = true;
@@ -405,6 +407,8 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   window.__presentationTimerMediaUsed = false;
   window.__timerPeerCount = 0;
   window.__timerReceiveMuted = true;
+  window.__timerCameraEnabled = false;
+  window.__timerVideoState = { phase: 'idle', remainingSeconds: 0, overtimeSeconds: 0, isPaused: false, speaker: '', sessionActive: false };
   const log = (event, data) => {
     try {
       window.__timerDebugLog.push({ t: Date.now(), event, data: data || {} });
@@ -547,14 +551,162 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     return track;
   };
 
-  const syntheticVideoTrack = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 360;
-    const painter = canvas.getContext('2d');
-    painter.fillStyle = '#111827';
-    painter.fillRect(0, 0, canvas.width, canvas.height);
-    return canvas.captureStream(1).getVideoTracks()[0];
+  const VIDEO_WIDTH = 1280;
+  const VIDEO_HEIGHT = 720;
+  const VIDEO_FPS = 15;
+  let videoCanvas;
+  let videoPainter;
+  let videoStream;
+  let videoTrack;
+  let videoDrawTimer;
+  const phaseLabels = {
+    idle: 'Ожидание',
+    talk: 'Доклад',
+    talkOvertime: 'Доклад — просрочка',
+    questions: 'Вопросы',
+    questionsOvertime: 'Вопросы — просрочка',
+    completed: 'Завершено'
+  };
+  const formatClock = (totalSeconds) => {
+    const seconds = Math.max(0, Number(totalSeconds) || 0);
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    return String(minutes).padStart(2, '0') + ':' + String(rest).padStart(2, '0');
+  };
+  const fitText = (text, maxWidth, font) => {
+    videoPainter.font = font;
+    if (videoPainter.measureText(text).width <= maxWidth) return text;
+    let trimmed = text;
+    while (trimmed.length > 1 && videoPainter.measureText(trimmed + '…').width > maxWidth) {
+      trimmed = trimmed.slice(0, -1);
+    }
+    return trimmed + '…';
+  };
+  const drawVideoFrame = () => {
+    if (!videoPainter) return;
+    const state = window.__timerVideoState || {};
+    const enabled = Boolean(window.__timerCameraEnabled);
+    videoPainter.fillStyle = '#0f1218';
+    videoPainter.fillRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
+    if (!enabled) return;
+    const phase = String(state.phase || 'idle');
+    const isOvertime = phase.includes('Overtime');
+    const accent = isOvertime ? '#f59e0b' : '#4f7cff';
+    videoPainter.fillStyle = '#8ea0c5';
+    videoPainter.font = '600 48px "Segoe UI", system-ui, sans-serif';
+    videoPainter.textAlign = 'center';
+    videoPainter.textBaseline = 'middle';
+    videoPainter.fillText(phaseLabels[phase] || phase, VIDEO_WIDTH / 2, 180);
+    const timeText = isOvertime
+      ? '+' + formatClock(state.overtimeSeconds || 0)
+      : formatClock(state.remainingSeconds || 0);
+    videoPainter.fillStyle = accent;
+    videoPainter.font = '700 160px "Segoe UI", system-ui, sans-serif';
+    videoPainter.fillText(timeText, VIDEO_WIDTH / 2, 400);
+    if (state.isPaused) {
+      videoPainter.fillStyle = '#8ea0c5';
+      videoPainter.font = '500 40px "Segoe UI", system-ui, sans-serif';
+      videoPainter.fillText('ПАУЗА', VIDEO_WIDTH / 2, 500);
+    }
+    if (state.sessionActive) {
+      const speaker = fitText(String(state.speaker || '').trim() || 'Докладчик', VIDEO_WIDTH - 120, '500 44px "Segoe UI", system-ui, sans-serif');
+      videoPainter.fillStyle = '#e8edf7';
+      videoPainter.font = '500 44px "Segoe UI", system-ui, sans-serif';
+      videoPainter.fillText(speaker, VIDEO_WIDTH / 2, 600);
+    }
+  };
+  const startVideoDrawLoop = () => {
+    if (videoDrawTimer) return;
+    videoDrawTimer = setInterval(() => drawVideoFrame(), Math.round(1000 / VIDEO_FPS));
+  };
+  const applyVideoTrackEnabled = () => {
+    drawVideoFrame();
+  };
+  const hardenVideoTrack = (track) => {
+    if (!track || track.__timerVideoHardened) return track;
+    track.__timerVideoHardened = true;
+    track.__timerSynthetic = true;
+    const settings = {
+      deviceId: 'presentation-timer',
+      groupId: 'presentation-timer',
+      width: VIDEO_WIDTH,
+      height: VIDEO_HEIGHT,
+      frameRate: VIDEO_FPS,
+      aspectRatio: VIDEO_WIDTH / VIDEO_HEIGHT
+    };
+    try { Object.defineProperty(track, 'label', { configurable: true, get: () => 'Presentation Timer' }); } catch (_) {}
+    track.getSettings = () => Object.assign({}, settings);
+    track.getCapabilities = () => ({
+      deviceId: 'presentation-timer',
+      groupId: 'presentation-timer',
+      width: { min: VIDEO_WIDTH, max: VIDEO_WIDTH },
+      height: { min: VIDEO_HEIGHT, max: VIDEO_HEIGHT },
+      frameRate: { min: VIDEO_FPS, max: VIDEO_FPS },
+      aspectRatio: { min: VIDEO_WIDTH / VIDEO_HEIGHT, max: VIDEO_WIDTH / VIDEO_HEIGHT }
+    });
+    const originalApply = track.applyConstraints ? track.applyConstraints.bind(track) : null;
+    track.applyConstraints = async (constraints) => {
+      log('video.applyConstraints', constraints || {});
+      try {
+        if (originalApply) await originalApply({});
+      } catch (_) {}
+    };
+    const originalClone = track.clone ? track.clone.bind(track) : null;
+    track.clone = () => {
+      const cloned = originalClone ? originalClone() : ensureVideo();
+      return hardenVideoTrack(cloned);
+    };
+    ['mute', 'unmute', 'ended'].forEach((name) => {
+      track.addEventListener(name, () => log('video.' + name, { enabled: track.enabled, muted: track.muted, readyState: track.readyState }));
+    });
+    window.__timerVideoTrack = track;
+    log('video.harden', { readyState: track.readyState, enabled: track.enabled, muted: track.muted });
+    return track;
+  };
+  const ensureVideo = () => {
+    if (videoTrack) return videoTrack;
+    videoCanvas = document.createElement('canvas');
+    videoCanvas.width = VIDEO_WIDTH;
+    videoCanvas.height = VIDEO_HEIGHT;
+    videoPainter = videoCanvas.getContext('2d');
+    drawVideoFrame();
+    videoStream = videoCanvas.captureStream(VIDEO_FPS);
+    videoTrack = hardenVideoTrack(videoStream.getVideoTracks()[0]);
+    startVideoDrawLoop();
+    applyVideoTrackEnabled();
+    return videoTrack;
+  };
+  const propagateCameraEnabled = (enabled) => {
+    document.querySelectorAll('iframe').forEach((frame) => {
+      try {
+        injectIntoFrame(frame);
+        const child = frame.contentWindow;
+        if (child && child !== window && child.__timerSetCameraEnabled) child.__timerSetCameraEnabled(enabled);
+      } catch (_) {}
+    });
+  };
+  const propagateVideoState = (payload) => {
+    document.querySelectorAll('iframe').forEach((frame) => {
+      try {
+        injectIntoFrame(frame);
+        const child = frame.contentWindow;
+        if (child && child !== window && child.__timerSetVideoState) child.__timerSetVideoState(payload);
+      } catch (_) {}
+    });
+  };
+  window.__timerSetCameraEnabled = (enabled) => {
+    window.__timerCameraEnabled = Boolean(enabled);
+    log('camera.enabled', { enabled: window.__timerCameraEnabled });
+    ensureVideo();
+    applyVideoTrackEnabled();
+    propagateCameraEnabled(window.__timerCameraEnabled);
+    return true;
+  };
+  window.__timerSetVideoState = (payload) => {
+    window.__timerVideoState = Object.assign({}, window.__timerVideoState || {}, payload || {});
+    drawVideoFrame();
+    propagateVideoState(payload || {});
+    return true;
   };
 
   const applyRemoteTrackMute = (track) => {
@@ -622,6 +774,15 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       return { deviceId: this.deviceId, groupId: this.groupId, kind: this.kind, label: this.label };
     }
   });
+  const virtualCamera = () => ({
+    deviceId: 'presentation-timer',
+    groupId: 'presentation-timer',
+    kind: 'videoinput',
+    label: 'Presentation Timer',
+    toJSON() {
+      return { deviceId: this.deviceId, groupId: this.groupId, kind: this.kind, label: this.label };
+    }
+  });
 
   if (navigator.permissions && navigator.permissions.query) {
     const originalQuery = navigator.permissions.query.bind(navigator.permissions);
@@ -673,7 +834,9 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
         ensureAudio().stream.getAudioTracks().forEach((track) => stream.addTrack(hardenAudioTrack(track)));
       }
       if (constraints.video) {
-        stream.addTrack(syntheticVideoTrack());
+        window.__presentationTimerMediaUsed = true;
+        const track = ensureVideo();
+        stream.addTrack(hardenVideoTrack(track.clone ? track.clone() : track));
       }
       return stream;
     };
@@ -682,10 +845,12 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     navigator.mediaDevices.enumerateDevices = async () => {
       const devices = await originalEnumerateDevices();
       log('enumerateDevices', { count: devices.length });
-      if (devices.some((device) => device.deviceId === 'presentation-timer' || device.label === 'Presentation Timer')) {
-        return devices;
-      }
-      return devices.concat(virtualMic());
+      const hasTimerAudio = devices.some((device) => (device.deviceId === 'presentation-timer' || device.label === 'Presentation Timer') && device.kind === 'audioinput');
+      const hasTimerVideo = devices.some((device) => (device.deviceId === 'presentation-timer' || device.label === 'Presentation Timer') && device.kind === 'videoinput');
+      const extras = [];
+      if (!hasTimerAudio) extras.push(virtualMic());
+      if (!hasTimerVideo) extras.push(virtualCamera());
+      return extras.length ? devices.concat(extras) : devices;
     };
   }
 
@@ -798,8 +963,11 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   const localDiagnostics = () => {
     updateLevel();
     const track = window.__timerAudioTrack;
+    const video = window.__timerVideoTrack;
     let trackSettings = null;
+    let videoTrackSettings = null;
     try { trackSettings = track && track.getSettings ? track.getSettings() : null; } catch (_) {}
+    try { videoTrackSettings = video && video.getSettings ? video.getSettings() : null; } catch (_) {}
     return {
       href: String(location.href || ''),
       frame: window !== window.top,
@@ -809,6 +977,11 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       trackEnabled: track ? track.enabled : null,
       trackMuted: track ? track.muted : null,
       trackSettings,
+      cameraEnabled: Boolean(window.__timerCameraEnabled),
+      videoTrackReadyState: video ? video.readyState : '',
+      videoTrackEnabled: video ? video.enabled : null,
+      videoTrackSettings,
+      videoState: window.__timerVideoState || null,
       lastLevel: window.__timerLastLevel || 0,
       peerCount: Number(window.__timerPeerCount || 0),
       mediaUsed: Boolean(window.__presentationTimerMediaUsed),

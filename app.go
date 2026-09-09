@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +94,9 @@ func (a *App) startup(ctx context.Context) {
 	a.session = session.NewTracker()
 	a.session.SetOnChange(func(state session.State) {
 		runtime.EventsEmit(a.ctx, "session:state", state)
+		if a.engine != nil {
+			a.pushConferenceVideoState(a.engine.Snapshot())
+		}
 	})
 
 	cfg := a.timerConfigFromSettings(store.Get())
@@ -104,6 +109,7 @@ func (a *App) startup(ctx context.Context) {
 			if a.session != nil {
 				a.session.Tick()
 			}
+			a.pushConferenceVideoState(snapshot)
 		},
 		func(event timer.AlertEvent) {
 			runtime.EventsEmit(a.ctx, "timer:alert", event)
@@ -167,6 +173,7 @@ func (a *App) SaveSettings(input settings.Settings) error {
 
 	a.applyAudioSettings(input)
 	a.applyConferenceReceiveSettings(input)
+	a.applyConferenceCameraSettings(input)
 	if a.engine != nil && (a.session == nil || !a.session.Active()) {
 		a.engine.UpdateConfig(a.timerConfigFromSettings(input))
 	}
@@ -223,7 +230,9 @@ func (a *App) ConnectConference(url, displayName string) (conference.State, erro
 	if a.conference == nil {
 		return conference.State{}, context.Canceled
 	}
-	a.conference.SetReceiveMuted(a.settings.Get().MuteConferenceReceive)
+	s := a.settings.Get()
+	a.conference.SetReceiveMuted(s.MuteConferenceReceive)
+	a.conference.SetCameraEnabled(s.ConferenceCameraEnabled)
 	return a.conference.Connect(url, displayName)
 }
 
@@ -537,6 +546,69 @@ func (a *App) applyConferenceReceiveSettings(s settings.Settings) {
 	if active {
 		a.conference.SetReceiveMuted(s.MuteConferenceReceive)
 	}
+}
+
+func (a *App) applyConferenceCameraSettings(s settings.Settings) {
+	if a.conference == nil {
+		return
+	}
+	state := a.conference.GetState()
+	active := state.Phase == conference.PhaseOpening ||
+		state.Phase == conference.PhaseConnecting ||
+		state.Phase == conference.PhaseWaitingAdmission ||
+		state.Phase == conference.PhaseJoined ||
+		state.Phase == conference.PhasePlaying
+	if active {
+		state := a.conference.GetState()
+		if state.CameraEnabled != s.ConferenceCameraEnabled {
+			a.conference.SetCameraEnabled(s.ConferenceCameraEnabled)
+		}
+		if a.engine != nil {
+			a.pushConferenceVideoState(a.engine.Snapshot())
+		}
+	}
+}
+
+func (a *App) SetConferenceCameraEnabled(enabled bool) (conference.State, error) {
+	if a.settings == nil || a.conference == nil {
+		return conference.State{Phase: conference.PhaseIdle}, context.Canceled
+	}
+	s := a.settings.Get()
+	s.ConferenceCameraEnabled = enabled
+	if err := a.settings.Save(s); err != nil {
+		return a.conference.GetState(), err
+	}
+	a.conference.SetCameraEnabled(enabled)
+	if a.engine != nil {
+		a.pushConferenceVideoState(a.engine.Snapshot())
+	}
+	return a.conference.GetState(), nil
+}
+
+func (a *App) pushConferenceVideoState(snapshot timer.Snapshot) {
+	if a.conference == nil || !a.conference.IsConnected() {
+		return
+	}
+	speaker := ""
+	sessionActive := false
+	if a.session != nil {
+		sess := a.session.State()
+		if sess.Active && sess.CurrentIndex >= 0 && sess.CurrentIndex < len(sess.Speakers) {
+			sessionActive = true
+			speaker = strings.TrimSpace(sess.Speakers[sess.CurrentIndex].Name)
+			if speaker == "" {
+				speaker = fmt.Sprintf("Докладчик %d", sess.CurrentIndex+1)
+			}
+		}
+	}
+	a.conference.PushVideoState(conference.VideoState{
+		Phase:            string(snapshot.Phase),
+		RemainingSeconds: snapshot.RemainingSeconds,
+		OvertimeSeconds:  snapshot.OvertimeSeconds,
+		IsPaused:         snapshot.IsPaused,
+		Speaker:          speaker,
+		SessionActive:    sessionActive,
+	})
 }
 
 func (a *App) handleAlert(event timer.AlertEvent) {

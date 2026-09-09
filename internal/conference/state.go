@@ -32,6 +32,7 @@ type State struct {
 	Message        string `json:"message"`
 	Tested         bool   `json:"tested"`
 	BrowserVisible bool   `json:"browserVisible"`
+	CameraEnabled  bool   `json:"cameraEnabled"`
 	UpdatedAt      int64  `json:"updatedAt"`
 }
 

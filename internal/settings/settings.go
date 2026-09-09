@@ -21,8 +21,9 @@ type Settings struct {
 	NextSoundID         string   `json:"nextSoundId"`
 	DeviceID            string   `json:"deviceId"`
 	Volume              float64  `json:"volume"`
-	MuteConferenceSound  bool `json:"muteConferenceSound"`
-	MuteConferenceReceive bool `json:"muteConferenceReceive"`
+	MuteConferenceSound       bool `json:"muteConferenceSound"`
+	MuteConferenceReceive     bool `json:"muteConferenceReceive"`
+	ConferenceCameraEnabled   bool `json:"conferenceCameraEnabled"`
 	SessionTotalMinutes        int      `json:"sessionTotalMinutes"`
 	SessionTotalSeconds        int      `json:"sessionTotalSeconds"`
 	SessionSpeakerCount        int      `json:"sessionSpeakerCount"`
@@ -51,6 +52,7 @@ func Default() Settings {
 		Volume:              0.85,
 		MuteConferenceSound:         false,
 		MuteConferenceReceive:       true,
+		ConferenceCameraEnabled:     false,
 		SessionUseDefaultTalk:      true,
 		SessionUseDefaultQuestions: true,
 	}

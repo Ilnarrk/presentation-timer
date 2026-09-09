@@ -114,6 +114,10 @@ export function SetConferenceBrowserVisible(arg1) {
   return window['go']['main']['App']['SetConferenceBrowserVisible'](arg1);
 }
 
+export function SetConferenceCameraEnabled(arg1) {
+  return window['go']['main']['App']['SetConferenceCameraEnabled'](arg1);
+}
+
 export function Start() {
   return window['go']['main']['App']['Start']();
 }

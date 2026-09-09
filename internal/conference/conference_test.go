@@ -139,6 +139,85 @@ func TestPlayWAVRejectsDisconnectedState(t *testing.T) {
 	}
 }
 
+func TestSetCameraEnabledInvokesMediaBridge(t *testing.T) {
+	browser := &fakeBrowser{result: true}
+	controller := NewController(nil)
+	controller.browser = browser
+
+	controller.SetCameraEnabled(true)
+	if !strings.Contains(browser.expr, "__timerSetCameraEnabled(true)") {
+		t.Fatalf("enabled expression = %q", browser.expr)
+	}
+
+	controller.SetCameraEnabled(false)
+	if !strings.Contains(browser.expr, "__timerSetCameraEnabled(false)") {
+		t.Fatalf("disabled expression = %q", browser.expr)
+	}
+}
+
+func TestPushVideoStatePushesWhenCameraDisabled(t *testing.T) {
+	browser := &fakeBrowser{result: true}
+	controller := NewController(nil)
+	controller.browser = browser
+	controller.cancel = func() {}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseJoined
+	})
+
+	controller.PushVideoState(VideoState{Phase: "talk", RemainingSeconds: 120})
+	if !strings.Contains(browser.expr, "__timerSetVideoState") {
+		t.Fatalf("expected video state push when camera disabled: %q", browser.expr)
+	}
+}
+
+func TestSetCameraEnabledSkipsWhenUnchanged(t *testing.T) {
+	browser := &fakeBrowser{result: true}
+	controller := NewController(nil)
+	controller.browser = browser
+	controller.cameraEnabled = true
+
+	controller.SetCameraEnabled(true)
+	if browser.expr != "" {
+		t.Fatalf("unexpected evaluate when camera already enabled: %q", browser.expr)
+	}
+}
+
+func TestOpeningStatePreservesCameraEnabled(t *testing.T) {
+	controller := NewController(nil)
+	controller.cameraEnabled = true
+	controller.state.update(func(state *State) {
+		*state = State{
+			Phase:         PhaseOpening,
+			Platform:      "test",
+			DisplayURL:    "https://example.com",
+			Message:       "Открытие браузера",
+			CameraEnabled: controller.cameraEnabled,
+		}
+	})
+	if !controller.GetState().CameraEnabled {
+		t.Fatal("opening state should preserve cameraEnabled")
+	}
+}
+
+func TestPushVideoStatePushesWhenCameraEnabled(t *testing.T) {
+	browser := &fakeBrowser{result: true}
+	controller := NewController(nil)
+	controller.browser = browser
+	controller.cancel = func() {}
+	controller.cameraEnabled = true
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseJoined
+	})
+
+	controller.PushVideoState(VideoState{Phase: "talk", RemainingSeconds: 120})
+	if !strings.Contains(browser.expr, "__timerSetVideoState") {
+		t.Fatalf("expression does not push video state: %s", browser.expr)
+	}
+	if !strings.Contains(browser.expr, `"phase":"talk"`) {
+		t.Fatalf("expression missing phase payload: %s", browser.expr)
+	}
+}
+
 func TestSetReceiveMutedInvokesMediaBridge(t *testing.T) {
 	browser := &fakeBrowser{result: true}
 	controller := NewController(nil)
@@ -313,6 +392,24 @@ func TestChromeLikeUserAgentStripsEdgeToken(t *testing.T) {
 	}
 	if chromeVersionMajor(got) != "140" {
 		t.Fatalf("chromeVersionMajor() = %s, want 140", chromeVersionMajor(got))
+	}
+}
+
+func TestMediaBridgeContainsVideoAPI(t *testing.T) {
+	if !strings.Contains(mediaBridgeScript, "__timerSetCameraEnabled") {
+		t.Fatal("media bridge missing camera API")
+	}
+	if !strings.Contains(mediaBridgeScript, "__timerSetVideoState") {
+		t.Fatal("media bridge missing video state API")
+	}
+	if strings.Contains(mediaBridgeScript, "videoTrack.enabled =") {
+		t.Fatal("media bridge should not mute synthetic video track")
+	}
+}
+
+func TestJoinProbeEnablesCameraWhenRequested(t *testing.T) {
+	if !strings.Contains(joinProbeScript, "maybeEnableCamera") {
+		t.Fatal("join probe missing camera enable branch")
 	}
 }
 

@@ -13,14 +13,16 @@ import (
 )
 
 type Controller struct {
-	mu            sync.Mutex
-	state         *stateStore
-	cancel        context.CancelFunc
-	joinCancel    context.CancelFunc
-	browserCancel context.CancelFunc
-	browser       Browser
-	runID         uint64
-	receiveMuted  bool
+	mu               sync.Mutex
+	state            *stateStore
+	cancel           context.CancelFunc
+	joinCancel       context.CancelFunc
+	browserCancel    context.CancelFunc
+	browser          Browser
+	runID            uint64
+	receiveMuted     bool
+	cameraEnabled    bool
+	lastVideoPayload string
 }
 
 func NewController(onChange func(State)) *Controller {
@@ -56,14 +58,16 @@ func (c *Controller) Connect(rawURL, displayName string) (State, error) {
 	c.runID++
 	runID := c.runID
 	c.cancel = cancel
+	cameraEnabled := c.cameraEnabled
 	c.mu.Unlock()
 
 	c.state.update(func(state *State) {
 		*state = State{
-			Phase:      PhaseOpening,
-			Platform:   resolved.Adapter.Label(),
-			DisplayURL: resolved.DisplayURL,
-			Message:    "Открытие браузера",
+			Phase:         PhaseOpening,
+			Platform:      resolved.Adapter.Label(),
+			DisplayURL:    resolved.DisplayURL,
+			Message:       "Открытие браузера",
+			CameraEnabled: cameraEnabled,
 		}
 	})
 
@@ -96,6 +100,7 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 		state.BrowserVisible = IsBrowserWindowVisible()
 	})
 	c.applyReceiveMuted(browser)
+	c.applyCameraEnabled(browser)
 	go c.watchBrowser(ctx, runID, browser.Done())
 
 	progress := func(phase Phase, message string) {
@@ -129,6 +134,7 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 		return
 	}
 	c.applyReceiveMuted(browser)
+	c.applyCameraEnabled(browser)
 
 	<-ctx.Done()
 	browserCancel()
@@ -348,6 +354,73 @@ func (c *Controller) evaluateReceiveMuted(browser Browser, muted bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	expression := fmt.Sprintf(setReceiveMutedScript, muted)
+	var ok bool
+	_ = browser.Evaluate(ctx, expression, &ok)
+}
+
+func (c *Controller) SetCameraEnabled(enabled bool) {
+	c.mu.Lock()
+	if c.cameraEnabled == enabled {
+		c.mu.Unlock()
+		c.state.update(func(state *State) {
+			state.CameraEnabled = enabled
+		})
+		return
+	}
+	c.cameraEnabled = enabled
+	c.lastVideoPayload = ""
+	browser := c.browser
+	c.mu.Unlock()
+
+	c.state.update(func(state *State) {
+		state.CameraEnabled = enabled
+	})
+	if browser != nil {
+		c.evaluateCameraEnabled(browser, enabled)
+	}
+}
+
+func (c *Controller) PushVideoState(payload VideoState) {
+	c.mu.Lock()
+	browser := c.browser
+	c.mu.Unlock()
+
+	state := c.GetState()
+	if browser == nil || (state.Phase != PhaseJoined && state.Phase != PhasePlaying) {
+		return
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	next := string(data)
+	c.mu.Lock()
+	if next == c.lastVideoPayload {
+		c.mu.Unlock()
+		return
+	}
+	c.lastVideoPayload = next
+	c.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	expression := fmt.Sprintf(`Boolean(window.__timerSetVideoState && window.__timerSetVideoState(%s))`, next)
+	var ok bool
+	_ = browser.Evaluate(ctx, expression, &ok)
+}
+
+func (c *Controller) applyCameraEnabled(browser Browser) {
+	c.mu.Lock()
+	enabled := c.cameraEnabled
+	c.mu.Unlock()
+	c.evaluateCameraEnabled(browser, enabled)
+}
+
+func (c *Controller) evaluateCameraEnabled(browser Browser, enabled bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	expression := fmt.Sprintf(setCameraEnabledScript, enabled)
 	var ok bool
 	_ = browser.Evaluate(ctx, expression, &ok)
 }

@@ -28,6 +28,7 @@ import {
   SaveSessionTemplate,
   SaveSettings,
   SetConferenceBrowserVisible,
+  SetConferenceCameraEnabled,
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
@@ -90,6 +91,7 @@ interface ConferenceState {
   message: string;
   tested: boolean;
   browserVisible: boolean;
+  cameraEnabled: boolean;
   updatedAt: number;
 }
 
@@ -100,6 +102,7 @@ const initialConferenceState: ConferenceState = {
   message: 'Участник не подключён',
   tested: false,
   browserVisible: false,
+  cameraEnabled: false,
   updatedAt: 0,
 };
 
@@ -269,6 +272,7 @@ function App() {
   const [volume, setVolume] = useState(0.85);
   const [muteConferenceSound, setMuteConferenceSound] = useState(false);
   const [muteConferenceReceive, setMuteConferenceReceive] = useState(true);
+  const [conferenceCameraEnabled, setConferenceCameraEnabled] = useState(false);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [sounds, setSounds] = useState<SoundOption[]>([]);
   const [conferenceUrl, setConferenceUrl] = useState('');
@@ -364,6 +368,7 @@ function App() {
       volume: next?.volume ?? volume,
       muteConferenceSound: next?.muteConferenceSound ?? muteConferenceSound,
       muteConferenceReceive: next?.muteConferenceReceive ?? muteConferenceReceive,
+      conferenceCameraEnabled: next?.conferenceCameraEnabled ?? conferenceCameraEnabled,
     });
 
     setSaving(true);
@@ -372,6 +377,7 @@ function App() {
       const saved = settings.Settings.createFrom(await GetSettings());
       setMuteConferenceSound(saved.muteConferenceSound ?? false);
       setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
+      setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? false);
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setError('');
@@ -395,6 +401,7 @@ function App() {
     volume,
     muteConferenceSound,
     muteConferenceReceive,
+    conferenceCameraEnabled,
   ]);
 
   useEffect(() => {
@@ -434,6 +441,7 @@ function App() {
       setVolume(initialSettings.volume);
       setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
       setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
+      setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? false);
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
@@ -469,6 +477,7 @@ function App() {
   useEffect(() => {
     const unsubscribe = EventsOn('conference:state', (state: ConferenceState) => {
       setConferenceState(state);
+      setConferenceCameraEnabled(state.cameraEnabled ?? false);
       if (state.phase === 'error') setError(state.message);
     });
     return () => unsubscribe();
@@ -818,6 +827,20 @@ function App() {
     try {
       const state = await SetConferenceBrowserVisible(!conferenceState.browserVisible);
       setConferenceState(state as ConferenceState);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setConferenceBusy(false);
+    }
+  };
+
+  const handleConferenceCameraToggle = async (enabled: boolean) => {
+    setConferenceBusy(true);
+    try {
+      const state = await SetConferenceCameraEnabled(enabled);
+      setConferenceState(state as ConferenceState);
+      setConferenceCameraEnabled(state.cameraEnabled ?? enabled);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -1193,6 +1216,16 @@ function App() {
             <h2 id="connection-title">Подключение к ВКС</h2>
             <p className="modal-copy">{conferenceState.message}</p>
             {!conferenceActive && connectionForm}
+            <label className="settings-checkbox conference-camera-toggle">
+              <input
+                type="checkbox"
+                checked={conferenceCameraEnabled}
+                disabled={conferenceBusy}
+                onChange={(event) => handleConferenceCameraToggle(event.target.checked)}
+              />
+              <span>Показывать отсчёт в камере</span>
+            </label>
+            <p className="settings-hint">Участники увидят обратный отсчёт вместо пустой камеры участника «Таймер».</p>
             <div className="connection-footer">
               <div className={`modal-actions${conferenceActive ? ' conference-active-actions' : ''}`}>
                 {!conferenceActive ? (

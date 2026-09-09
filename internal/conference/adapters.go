@@ -299,6 +299,15 @@ const joinProbeScript = `(async () => {
       muteSpeakers();
     }
   };
+  const enableCamera = () => clickText(
+    ['включить камеру', 'turn on camera', 'start video', 'камера выключена', 'enable camera', 'unmute video', 'video off'],
+    ['микрофон', 'microphone', 'настрой']
+  );
+  const maybeEnableCamera = () => {
+    if (frameWindows().some((win) => Boolean(win.__timerCameraEnabled))) {
+      enableCamera();
+    }
+  };
   const detectJoined = () => {
     const controls = elements('button, [role="button"], [aria-label], [title], [data-testid]')
       .filter((element) => visible(element))
@@ -348,6 +357,7 @@ const joinProbeScript = `(async () => {
   if (detectJoined()) {
     maybeMuteSpeakers();
     clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
+    maybeEnableCamera();
     return { joined: true, waiting: false, error: '' };
   }
 
@@ -374,6 +384,7 @@ const joinProbeScript = `(async () => {
   if (detectJoined()) {
     maybeMuteSpeakers();
     clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
+    maybeEnableCamera();
     return { joined: true, waiting: false, error: '' };
   }
 
@@ -395,6 +406,7 @@ const joinProbeScript = `(async () => {
     if (detectJoined()) {
       maybeMuteSpeakers();
       clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
+      maybeEnableCamera();
       return { joined: true, waiting: false, error: '' };
     }
   }
