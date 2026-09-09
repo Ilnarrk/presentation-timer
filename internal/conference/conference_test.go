@@ -46,6 +46,23 @@ func TestResolveSupportedPlatforms(t *testing.T) {
 	}
 }
 
+func TestResolveSaluteJazzGuestLinkPreservesFragment(t *testing.T) {
+	rawURL := "https://jazz.tatneft.tatar/#/calls/rch4dh?psw=secret"
+	resolved, err := Resolve(rawURL)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Adapter.ID() != "salutejazz" {
+		t.Fatalf("platform = %q, want salutejazz", resolved.Adapter.ID())
+	}
+	if !strings.Contains(resolved.URL, "psw=secret") {
+		t.Fatalf("URL = %q, want guest psw fragment preserved", resolved.URL)
+	}
+	if strings.Contains(resolved.DisplayURL, "secret") {
+		t.Fatal("DisplayURL contains guest secret")
+	}
+}
+
 func TestResolveRejectsUnsafeAndUnsupportedURLs(t *testing.T) {
 	for _, rawURL := range []string{
 		"http://telemost.yandex.ru/j/123",

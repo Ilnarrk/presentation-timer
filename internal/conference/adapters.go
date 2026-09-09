@@ -157,11 +157,41 @@ func Resolve(rawURL string) (Resolved, error) {
 	if isSpoofedHostname(parsed.Hostname()) {
 		return Resolved{}, ErrUnsupportedURL
 	}
+	if isSaluteJazzOnPrem(parsed) {
+		return Resolved{
+			URL:        parsed.String(),
+			DisplayURL: display,
+			Adapter:    saluteJazzAdapter(),
+		}, nil
+	}
 	return Resolved{
 		URL:        parsed.String(),
 		DisplayURL: display,
 		Adapter:    genericAdapter,
 	}, nil
+}
+
+func saluteJazzAdapter() Adapter {
+	for _, candidate := range adapters {
+		if candidate.ID() == "salutejazz" {
+			return candidate
+		}
+	}
+	return adapterConfig{id: "salutejazz", label: "SaluteJazz"}
+}
+
+func isSaluteJazzOnPrem(parsed *url.URL) bool {
+	host := strings.ToLower(parsed.Hostname())
+	if !strings.Contains(host, "jazz") {
+		return false
+	}
+	fragment := strings.ToLower(parsed.Fragment)
+	path := strings.ToLower(parsed.EscapedPath())
+	query := strings.ToLower(parsed.RawQuery)
+	return strings.Contains(fragment, "/calls/") ||
+		strings.Contains(path, "/calls/") ||
+		strings.Contains(fragment, "psw=") ||
+		strings.Contains(query, "psw=")
 }
 
 func isSpoofedHostname(hostname string) bool {
@@ -305,6 +335,8 @@ const joinProbeScript = `(async () => {
 
   window.__timerJoinAttempts = (window.__timerJoinAttempts || 0) + 1;
   const shouldAct = window.__timerJoinAttempts <= 12;
+  const onLoginPage = elements('input[type="password"]').some(visible)
+    || elements('input[type="email"], input[autocomplete="username"]').some(visible);
 
   const pageText = normalize(frameDocuments().map((doc) => doc.body?.innerText || '').join(' '));
   if (/ссылка.*недействительна|встреча.*не найдена|конференция.*не найдена|мероприятие.*завершено|браузер не поддерживается/.test(pageText)) {
@@ -345,11 +377,18 @@ const joinProbeScript = `(async () => {
     return { joined: true, waiting: false, error: '' };
   }
 
+  if (onLoginPage && shouldAct) {
+    clickText(['как гость', 'гостевой', 'без авторизации', 'guest', 'join as guest', 'продолжить без']);
+    return { joined: detectJoined(), waiting: false, error: '' };
+  }
+
   const waiting = /ожидайте.*допуск|организатор.*допуст|запрос.*отправлен|ожидание.*подключ|waiting for the host|waiting to be admitted/.test(pageText);
-  if (!waiting && shouldAct) {
+  if (!waiting && shouldAct && !onLoginPage) {
     clickText(['включить микрофон', 'unmute', 'микрофон выключен', 'turn on microphone'], ['настрой']);
     const joinWords = platform === 'mts-link'
       ? ['подключиться', 'войти в мероприятие', 'присоединиться', 'join']
+      : platform === 'salutejazz'
+      ? ['присоединиться', 'подключиться', 'войти во встречу', 'продолжить', 'join']
       : ['присоединиться', 'подключиться', 'войти во встречу', 'продолжить', 'войти', 'join'];
     clickText(joinWords, ['создать', 'зарегистр', 'войти через', 'войти в аккаунт']);
     await sleep(400);
