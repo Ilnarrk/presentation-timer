@@ -154,6 +154,31 @@ func TestPlayWAVRejectsDisconnectedState(t *testing.T) {
 	}
 }
 
+func TestPlayWAVRestoresJoinedOnEvaluateTimeout(t *testing.T) {
+	browser := &fakeBrowser{err: context.DeadlineExceeded}
+	controller := NewController(nil)
+	controller.browser = browser
+	controller.cancel = func() {}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseJoined
+	})
+
+	err := controller.TestSound([]byte("RIFF test"))
+	if err == nil {
+		t.Fatal("TestSound() unexpectedly succeeded")
+	}
+	state := controller.GetState()
+	if state.Phase != PhaseJoined {
+		t.Fatalf("phase = %q, want joined after timeout", state.Phase)
+	}
+	if state.Tested {
+		t.Fatal("timeout should not mark sound as tested")
+	}
+	if controller.browser == nil {
+		t.Fatal("timeout should not tear down the VKS session")
+	}
+}
+
 func TestSetCameraEnabledInvokesMediaBridge(t *testing.T) {
 	browser := &fakeBrowser{result: true}
 	controller := NewController(nil)
@@ -420,12 +445,16 @@ func TestMediaBridgeContainsVideoAPI(t *testing.T) {
 	if strings.Contains(mediaBridgeScript, "videoTrack.enabled =") {
 		t.Fatal("media bridge should not mute synthetic video track")
 	}
+	if strings.Contains(mediaBridgeScript, "get() { return true; }") {
+		t.Fatal("audio track enabled should not be locked; Telemost/MINT mute during join")
+	}
 }
 
 func TestMediaBridgePatchesSyntheticAudioDevices(t *testing.T) {
 	checks := []string{
 		"MediaDevices.prototype.getUserMedia",
-		"keepaliveGain.gain.value = 0.0004",
+		"keepaliveGain.gain.value = 0.0005",
+		"tapAudioTrack",
 		"rtc.addTrack.replace",
 		"rtc.replaceTrack.replace",
 		"postToFrames",
@@ -433,11 +462,40 @@ func TestMediaBridgePatchesSyntheticAudioDevices(t *testing.T) {
 		"webkitGetUserMedia",
 		"synthetic: true",
 		"contentHint = 'music'",
+		"virtualMic('default')",
+		"applyCameraEnabledLocal",
+		"applyVideoStateLocal",
+		"applyReceiveMutedLocal",
 	}
 	for _, check := range checks {
 		if !strings.Contains(mediaBridgeScript, check) {
 			t.Fatalf("media bridge missing %q", check)
 		}
+	}
+}
+
+func TestMediaBridgeMessageHandlerDoesNotRebroadcast(t *testing.T) {
+	rebroadcasts := []string{
+		"data.type === 'setCameraEnabled') window.__timerSetCameraEnabled",
+		"data.type === 'setVideoState') window.__timerSetVideoState",
+		"data.type === 'setReceiveMuted') window.__timerSetReceiveMuted",
+		"child.__timerSetCameraEnabled",
+		"child.__timerSetVideoState",
+		"child.__timerSetReceiveMuted",
+	}
+	for _, check := range rebroadcasts {
+		if strings.Contains(mediaBridgeScript, check) {
+			t.Fatalf("message path re-enters setter: %s", check)
+		}
+	}
+	if !strings.Contains(mediaBridgeScript, "data.type === 'setCameraEnabled') applyCameraEnabledLocal") {
+		t.Fatal("camera message handler should apply locally")
+	}
+	if !strings.Contains(mediaBridgeScript, "data.type === 'setVideoState') applyVideoStateLocal") {
+		t.Fatal("video message handler should apply locally")
+	}
+	if !strings.Contains(mediaBridgeScript, "data.type === 'setReceiveMuted') applyReceiveMutedLocal") {
+		t.Fatal("receive mute message handler should apply locally")
 	}
 }
 

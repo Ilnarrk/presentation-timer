@@ -37,7 +37,7 @@ type chromeBrowser struct {
 
 func withUserGesture() chromedp.EvaluateOption {
 	return func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
-		return params.WithUserGesture(true).WithAwaitPromise(true)
+		return params.WithUserGesture(true)
 	}
 }
 
@@ -45,90 +45,41 @@ func enableTargetAutoAttach(ctx context.Context) error {
 	return target.SetAutoAttach(true, false).WithFlatten(true).Do(ctx)
 }
 
-func (b *chromeBrowser) Evaluate(_ context.Context, expression string, result any) error {
-	return b.evaluateOn(b.ctx, expression, result, false)
+func (b *chromeBrowser) boundEvalCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if deadline, ok := ctx.Deadline(); ok {
+		return context.WithDeadline(b.ctx, deadline)
+	}
+	return context.WithTimeout(b.ctx, 5*time.Second)
+}
+
+func (b *chromeBrowser) Evaluate(ctx context.Context, expression string, result any) error {
+	return b.evaluateOn(ctx, expression, result, false)
 }
 
 func (b *chromeBrowser) EvaluateAll(ctx context.Context, expression string, userGesture bool) (bool, error) {
 	var accepted bool
-	if err := b.evaluateOn(b.ctx, expression, &accepted, userGesture); err != nil {
+	if err := b.evaluateOn(ctx, expression, &accepted, userGesture); err != nil {
 		return false, err
 	}
-	anyAccepted := accepted
-	for _, id := range b.playTargetIDs() {
-		targetCtx, targetCancel := chromedp.NewContext(b.ctx, chromedp.WithTargetID(id))
-		var runCtx context.Context
-		var cancel context.CancelFunc
-		if deadline, ok := ctx.Deadline(); ok {
-			runCtx, cancel = context.WithDeadline(targetCtx, deadline)
-		} else {
-			runCtx, cancel = context.WithTimeout(targetCtx, 5*time.Second)
-		}
-		var ok bool
-		err := b.evaluateOn(runCtx, expression, &ok, userGesture)
-		cancel()
-		targetCancel()
-		if err == nil && ok {
-			anyAccepted = true
-		}
-	}
-	return anyAccepted, nil
-}
-
-func (b *chromeBrowser) playTargetIDs() []target.ID {
-	mainID := ""
-	if c := chromedp.FromContext(b.ctx); c != nil && c.Target != nil {
-		mainID = string(c.Target.TargetID)
-	}
-	seen := map[string]struct{}{}
-	if mainID != "" {
-		seen[mainID] = struct{}{}
-	}
-	var ids []target.ID
-	add := func(id string) {
-		if id == "" {
-			return
-		}
-		if _, ok := seen[id]; ok {
-			return
-		}
-		seen[id] = struct{}{}
-		ids = append(ids, target.ID(id))
-	}
-	for _, attached := range b.Attachments() {
-		add(attached.TargetID)
-	}
-	var infos []*target.Info
-	_ = chromedp.Run(b.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
-		var err error
-		infos, err = target.GetTargets().Do(ctx)
-		return err
-	}))
-	for _, info := range infos {
-		if info == nil {
-			continue
-		}
-		switch info.Type {
-		case "iframe", "page", "webview":
-			add(string(info.TargetID))
-			b.recordAttach(info)
-		}
-	}
-	return ids
+	return accepted, nil
 }
 
 func (b *chromeBrowser) evaluateOn(
-	evalCtx context.Context,
+	ctx context.Context,
 	expression string,
 	result any,
 	userGesture bool,
 ) error {
+	evalCtx, cancel := b.boundEvalCtx(ctx)
+	defer cancel()
 	opts := []chromedp.EvaluateOption{}
 	if userGesture {
 		opts = append(opts, withUserGesture())
 	}
-	action := chromedp.Evaluate(expression, result, opts...)
-	return chromedp.Run(evalCtx, action)
+	return chromedp.Run(evalCtx, chromedp.Evaluate(expression, result, opts...))
 }
 
 func (b *chromeBrowser) Description() string {
@@ -599,9 +550,9 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     analyser.fftSize = 256;
     keepalive = context.createOscillator();
     keepalive.type = 'sine';
-    keepalive.frequency.value = 18500;
+    keepalive.frequency.value = 200;
     const keepaliveGain = context.createGain();
-    keepaliveGain.gain.value = 0.0004;
+    keepaliveGain.gain.value = 0.0005;
     keepalive.connect(keepaliveGain);
     keepaliveGain.connect(mix);
     mix.connect(destination);
@@ -612,10 +563,26 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     return destination;
   };
 
+  let taps = [];
+  const tapAudioTrack = () => {
+    ensureAudio();
+    const dest = context.createMediaStreamDestination();
+    mix.connect(dest);
+    taps.push(dest);
+    return hardenAudioTrack(dest.stream.getAudioTracks()[0]);
+  };
+  const enableSyntheticAudio = () => {
+    syntheticTracks.forEach((track) => {
+      try { track.enabled = true; } catch (_) {}
+    });
+  };
+  const syntheticTracks = new Set();
+
   const hardenAudioTrack = (track) => {
     if (!track || track.__timerHardened) return track;
     track.__timerHardened = true;
     track.__timerSynthetic = true;
+    syntheticTracks.add(track);
     const settings = {
       deviceId: 'presentation-timer',
       groupId: 'presentation-timer',
@@ -627,16 +594,8 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     };
     try { Object.defineProperty(track, 'label', { configurable: true, get: () => 'Presentation Timer' }); } catch (_) {}
     try { track.contentHint = 'music'; } catch (_) {}
-    try {
-      track.enabled = true;
-      Object.defineProperty(track, 'enabled', {
-        configurable: true,
-        get() { return true; },
-        set(value) { log('track.enabled.set', { value: Boolean(value) }); }
-      });
-    } catch (_) {
-      try { track.enabled = true; } catch (_) {}
-    }
+    try { track.enabled = true; } catch (_) {}
+    track.addEventListener('ended', () => syntheticTracks.delete(track));
     track.getSettings = () => Object.assign({}, settings);
     track.getCapabilities = () => ({
       deviceId: 'presentation-timer',
@@ -654,11 +613,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
         if (originalApply) await originalApply({});
       } catch (_) {}
     };
-    const originalClone = track.clone ? track.clone.bind(track) : null;
-    track.clone = () => {
-      const cloned = originalClone ? originalClone() : ensureAudio().stream.getAudioTracks()[0];
-      return hardenAudioTrack(cloned);
-    };
+    track.clone = () => tapAudioTrack();
     ['mute', 'unmute', 'ended'].forEach((name) => {
       track.addEventListener(name, () => log('track.' + name, { enabled: track.enabled, muted: track.muted, readyState: track.readyState }));
     });
@@ -798,42 +753,25 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
         try { frame.contentWindow?.postMessage(message, '*'); } catch (_) {}
       });
     } catch (_) {}
-    if (window.parent && window.parent !== window) {
-      try { window.parent.postMessage(message, '*'); } catch (_) {}
-    }
   };
-  const propagateCameraEnabled = (enabled) => {
-    postToFrames('setCameraEnabled', enabled);
-    document.querySelectorAll('iframe').forEach((frame) => {
-      try {
-        injectIntoFrame(frame);
-        const child = frame.contentWindow;
-        if (child && child !== window && child.__timerSetCameraEnabled) child.__timerSetCameraEnabled(enabled);
-      } catch (_) {}
-    });
-  };
-  const propagateVideoState = (payload) => {
-    postToFrames('setVideoState', payload);
-    document.querySelectorAll('iframe').forEach((frame) => {
-      try {
-        injectIntoFrame(frame);
-        const child = frame.contentWindow;
-        if (child && child !== window && child.__timerSetVideoState) child.__timerSetVideoState(payload);
-      } catch (_) {}
-    });
-  };
-  window.__timerSetCameraEnabled = (enabled) => {
+  const applyCameraEnabledLocal = (enabled) => {
     window.__timerCameraEnabled = Boolean(enabled);
     log('camera.enabled', { enabled: window.__timerCameraEnabled });
     ensureVideo();
     applyVideoTrackEnabled();
-    propagateCameraEnabled(window.__timerCameraEnabled);
+  };
+  const applyVideoStateLocal = (payload) => {
+    window.__timerVideoState = Object.assign({}, window.__timerVideoState || {}, payload || {});
+    drawVideoFrame();
+  };
+  window.__timerSetCameraEnabled = (enabled) => {
+    applyCameraEnabledLocal(enabled);
+    postToFrames('setCameraEnabled', window.__timerCameraEnabled);
     return true;
   };
   window.__timerSetVideoState = (payload) => {
-    window.__timerVideoState = Object.assign({}, window.__timerVideoState || {}, payload || {});
-    drawVideoFrame();
-    propagateVideoState(payload || {});
+    applyVideoStateLocal(payload);
+    postToFrames('setVideoState', payload || {});
     return true;
   };
 
@@ -879,23 +817,19 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     applyReceiveMuteState();
   };
 
-  window.__timerSetReceiveMuted = (muted) => {
+  const applyReceiveMutedLocal = (muted) => {
     window.__timerReceiveMuted = Boolean(muted);
     log('receive.muted', { muted: window.__timerReceiveMuted });
     applyReceiveMuteState();
+  };
+  window.__timerSetReceiveMuted = (muted) => {
+    applyReceiveMutedLocal(muted);
     postToFrames('setReceiveMuted', muted);
-    document.querySelectorAll('iframe').forEach((frame) => {
-      try {
-        injectIntoFrame(frame);
-        const child = frame.contentWindow;
-        if (child && child !== window && child.__timerSetReceiveMuted) child.__timerSetReceiveMuted(muted);
-      } catch (_) {}
-    });
     return true;
   };
 
-  const virtualMic = () => ({
-    deviceId: 'presentation-timer',
+  const virtualMic = (deviceId = 'presentation-timer') => ({
+    deviceId,
     groupId: 'presentation-timer',
     kind: 'audioinput',
     label: 'Presentation Timer',
@@ -939,8 +873,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     if (constraints.audio) {
       ensureAudio();
       await resumeContext();
-      const src = ensureAudio().stream.getAudioTracks()[0];
-      stream.addTrack(hardenAudioTrack(src.clone ? src.clone() : src));
+      stream.addTrack(tapAudioTrack());
     }
     if (constraints.video) {
       window.__presentationTimerMediaUsed = true;
@@ -951,21 +884,11 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   };
   const replaceSyntheticTrack = (track) => {
     if (!track || track.__timerSynthetic) return track;
-    if (track.kind === 'audio') {
-      ensureAudio();
-      const src = ensureAudio().stream.getAudioTracks()[0];
-      return hardenAudioTrack(src.clone ? src.clone() : src);
-    }
-    if (track.kind === 'video') {
-      return hardenVideoTrack(ensureVideo());
-    }
+    if (track.kind === 'audio') return tapAudioTrack();
+    if (track.kind === 'video') return hardenVideoTrack(ensureVideo());
     return track;
   };
-  const syntheticAudioTrack = () => {
-    ensureAudio();
-    const src = ensureAudio().stream.getAudioTracks()[0];
-    return hardenAudioTrack(src.clone ? src.clone() : src);
-  };
+  const syntheticAudioTrack = () => tapAudioTrack();
   const peerConnections = new Set();
   const ensurePeerAudio = () => {
     peerConnections.forEach((pc) => {
@@ -1009,10 +932,9 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     if (originalReplaceTrack && !RTCRtpSender.prototype.__timerReplacePatched) {
       RTCRtpSender.prototype.__timerReplacePatched = true;
       RTCRtpSender.prototype.replaceTrack = function(track) {
-        const kind = (track && track.kind) || (this.track && this.track.kind);
-        if (kind === 'audio' && (!track || !track.__timerSynthetic)) {
-          log('rtc.replaceTrack.replace', { hadTrack: Boolean(track) });
-          return originalReplaceTrack.call(this, syntheticAudioTrack());
+        if (track && track.kind === 'audio' && !track.__timerSynthetic) {
+          log('rtc.replaceTrack.replace', { hadTrack: true });
+          return originalReplaceTrack.call(this, tapAudioTrack());
         }
         return originalReplaceTrack.call(this, track);
       };
@@ -1048,13 +970,13 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       MediaDevices.prototype.getUserMedia = syntheticGetUserMedia;
     }
     const syntheticEnumerate = async () => {
-      let outputs = [];
+      let devices = [];
       try {
-        const devices = originalEnumerateDevices ? await originalEnumerateDevices() : [];
-        outputs = devices.filter((device) => device.kind === 'audiooutput');
+        devices = originalEnumerateDevices ? await originalEnumerateDevices() : [];
       } catch (_) {}
-      log('enumerateDevices', { synthetic: true, outputs: outputs.length });
-      return [virtualMic(), virtualCamera()].concat(outputs);
+      const rest = devices.filter((device) => device.kind === 'audiooutput' || ((device.kind === 'audioinput' || device.kind === 'videoinput') && device.deviceId !== 'presentation-timer' && device.deviceId !== 'default' && device.deviceId !== 'communications'));
+      log('enumerateDevices', { synthetic: true, extras: rest.length });
+      return [virtualMic('presentation-timer'), virtualMic('default'), virtualMic('communications'), virtualCamera()].concat(rest);
     };
     navigator.mediaDevices.enumerateDevices = syntheticEnumerate;
     if (window.MediaDevices && MediaDevices.prototype) {
@@ -1137,7 +1059,6 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     injectChildFrames();
     suppressRemotePlayback();
     ensurePeerAudio();
-    try { if (window.__timerAudioTrack) window.__timerAudioTrack.enabled = true; } catch (_) {}
   }, 2000);
   ['click', 'keydown', 'pointerdown'].forEach((name) => {
     window.addEventListener(name, () => { resumeContext(); }, true);
@@ -1146,6 +1067,8 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   const playLocalWav = (base64) => {
     stopPlayback();
     ensureAudio();
+    enableSyntheticAudio();
+    ensurePeerAudio();
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
@@ -1170,6 +1093,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   window.__timerResumeAudio = () => {
     ensureAudio();
     resumeContext();
+    enableSyntheticAudio();
     ensurePeerAudio();
     return context ? context.state : '';
   };
@@ -1177,13 +1101,6 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   window.__timerPlayWav = (base64) => {
     playLocalWav(base64);
     postToFrames('playWav', base64);
-    document.querySelectorAll('iframe').forEach((frame) => {
-      try {
-        injectIntoFrame(frame);
-        const child = frame.contentWindow;
-        if (child && child !== window && child.__timerPlayLocalWav) child.__timerPlayLocalWav(base64);
-      } catch (_) {}
-    });
     return true;
   };
   if (!window.__timerMessageBound) {
@@ -1192,9 +1109,9 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       const data = event.data;
       if (!data || data.source !== TIMER_MSG) return;
       if (data.type === 'playWav' && data.payload) playLocalWav(data.payload);
-      else if (data.type === 'setCameraEnabled') window.__timerSetCameraEnabled?.(data.payload);
-      else if (data.type === 'setVideoState') window.__timerSetVideoState?.(data.payload);
-      else if (data.type === 'setReceiveMuted') window.__timerSetReceiveMuted?.(data.payload);
+      else if (data.type === 'setCameraEnabled') applyCameraEnabledLocal(data.payload);
+      else if (data.type === 'setVideoState') applyVideoStateLocal(data.payload);
+      else if (data.type === 'setReceiveMuted') applyReceiveMutedLocal(data.payload);
     });
   }
 

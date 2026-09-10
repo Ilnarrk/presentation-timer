@@ -1248,7 +1248,6 @@ function App() {
                         </button>
                         <button
                           className="icon-button conference-disconnect-button"
-                          disabled={conferenceBusy}
                           onClick={handleConferenceDisconnect}
                           aria-label="Отключиться от ВКС"
                           title="Отключиться"

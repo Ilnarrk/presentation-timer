@@ -285,6 +285,13 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 		state.Phase = PhasePlaying
 		state.Message = "Отправка звука участникам"
 	})
+	defer func() {
+		c.updateIfCurrent(runID, func(state *State) {
+			if state.Phase == PhasePlaying {
+				state.Phase = PhaseJoined
+			}
+		})
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -294,7 +301,9 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 	)
 	accepted, err := browser.EvaluateAll(ctx, expression, true)
 	if err != nil {
-		c.failSession(runID, "Соединение с браузером ВКС потеряно. Подключитесь заново")
+		if !isEvalTimeout(err) {
+			c.failSession(runID, "Соединение с браузером ВКС потеряно. Подключитесь заново")
+		}
 		return fmt.Errorf("ошибка передачи звука в ВКС: %w", err)
 	}
 
@@ -429,6 +438,17 @@ func (c *Controller) IsReady() bool {
 func (c *Controller) IsConnected() bool {
 	state := c.GetState()
 	return state.Phase == PhaseJoined || state.Phase == PhasePlaying
+}
+
+func isEvalTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "deadline") || strings.Contains(msg, "timeout") || strings.Contains(msg, "context canceled")
 }
 
 func (c *Controller) fail(err error) {
