@@ -23,8 +23,9 @@ import (
 )
 
 type attachedTarget struct {
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type     string `json:"type"`
+	URL      string `json:"url"`
+	TargetID string `json:"targetId,omitempty"`
 }
 
 type chromeBrowser struct {
@@ -34,8 +35,100 @@ type chromeBrowser struct {
 	attached    []attachedTarget
 }
 
-func (b *chromeBrowser) Evaluate(ctx context.Context, expression string, result any) error {
-	return chromedp.Run(b.ctx, chromedp.Evaluate(expression, result))
+func withUserGesture() chromedp.EvaluateOption {
+	return func(params *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return params.WithUserGesture(true).WithAwaitPromise(true)
+	}
+}
+
+func enableTargetAutoAttach(ctx context.Context) error {
+	return target.SetAutoAttach(true, false).WithFlatten(true).Do(ctx)
+}
+
+func (b *chromeBrowser) Evaluate(_ context.Context, expression string, result any) error {
+	return b.evaluateOn(b.ctx, expression, result, false)
+}
+
+func (b *chromeBrowser) EvaluateAll(ctx context.Context, expression string, userGesture bool) (bool, error) {
+	var accepted bool
+	if err := b.evaluateOn(b.ctx, expression, &accepted, userGesture); err != nil {
+		return false, err
+	}
+	anyAccepted := accepted
+	for _, id := range b.playTargetIDs() {
+		targetCtx, targetCancel := chromedp.NewContext(b.ctx, chromedp.WithTargetID(id))
+		var runCtx context.Context
+		var cancel context.CancelFunc
+		if deadline, ok := ctx.Deadline(); ok {
+			runCtx, cancel = context.WithDeadline(targetCtx, deadline)
+		} else {
+			runCtx, cancel = context.WithTimeout(targetCtx, 5*time.Second)
+		}
+		var ok bool
+		err := b.evaluateOn(runCtx, expression, &ok, userGesture)
+		cancel()
+		targetCancel()
+		if err == nil && ok {
+			anyAccepted = true
+		}
+	}
+	return anyAccepted, nil
+}
+
+func (b *chromeBrowser) playTargetIDs() []target.ID {
+	mainID := ""
+	if c := chromedp.FromContext(b.ctx); c != nil && c.Target != nil {
+		mainID = string(c.Target.TargetID)
+	}
+	seen := map[string]struct{}{}
+	if mainID != "" {
+		seen[mainID] = struct{}{}
+	}
+	var ids []target.ID
+	add := func(id string) {
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, target.ID(id))
+	}
+	for _, attached := range b.Attachments() {
+		add(attached.TargetID)
+	}
+	var infos []*target.Info
+	_ = chromedp.Run(b.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		infos, err = target.GetTargets().Do(ctx)
+		return err
+	}))
+	for _, info := range infos {
+		if info == nil {
+			continue
+		}
+		switch info.Type {
+		case "iframe", "page", "webview":
+			add(string(info.TargetID))
+			b.recordAttach(info)
+		}
+	}
+	return ids
+}
+
+func (b *chromeBrowser) evaluateOn(
+	evalCtx context.Context,
+	expression string,
+	result any,
+	userGesture bool,
+) error {
+	opts := []chromedp.EvaluateOption{}
+	if userGesture {
+		opts = append(opts, withUserGesture())
+	}
+	action := chromedp.Evaluate(expression, result, opts...)
+	return chromedp.Run(evalCtx, action)
 }
 
 func (b *chromeBrowser) Description() string {
@@ -52,7 +145,16 @@ func (b *chromeBrowser) recordAttach(info *target.Info) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.attached = append(b.attached, attachedTarget{Type: info.Type, URL: info.URL})
+	for _, existing := range b.attached {
+		if existing.TargetID != "" && existing.TargetID == string(info.TargetID) {
+			return
+		}
+	}
+	b.attached = append(b.attached, attachedTarget{
+		Type:     info.Type,
+		URL:      info.URL,
+		TargetID: string(info.TargetID),
+	})
 	if len(b.attached) > 50 {
 		b.attached = b.attached[len(b.attached)-50:]
 	}
@@ -114,6 +216,8 @@ func attachBrowser(
 
 	err = chromedp.Run(browserCtx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
+			_ = enableTargetAutoAttach(ctx)
+			_ = target.SetDiscoverTargets(true).Do(ctx)
 			grantMediaPermissions(ctx, targetURL)
 			return nil
 		}),
@@ -146,25 +250,24 @@ func attachBrowser(
 }
 
 func grantMediaPermissions(ctx context.Context, targetURL string) {
-	origin := ""
-	if parsed, err := url.Parse(targetURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-		origin = parsed.Scheme + "://" + parsed.Host
-	}
 	perms := []cdpbrowser.PermissionType{
 		cdpbrowser.PermissionTypeAudioCapture,
 		cdpbrowser.PermissionTypeVideoCapture,
 	}
-	grant := cdpbrowser.GrantPermissions(perms)
-	if origin != "" {
-		grant = grant.WithOrigin(origin)
+	_ = cdpbrowser.GrantPermissions(perms).Do(ctx)
+	origin := ""
+	if parsed, err := url.Parse(targetURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		origin = parsed.Scheme + "://" + parsed.Host
 	}
-	_ = grant.Do(ctx)
+	if origin != "" {
+		_ = cdpbrowser.GrantPermissions(perms).WithOrigin(origin).Do(ctx)
+	}
 	for _, name := range []string{"microphone", "camera"} {
 		set := cdpbrowser.SetPermission(&cdpbrowser.PermissionDescriptor{Name: name}, cdpbrowser.PermissionSettingGranted)
-		if origin != "" {
-			set = set.WithOrigin(origin)
-		}
 		_ = set.Do(ctx)
+		if origin != "" {
+			_ = set.WithOrigin(origin).Do(ctx)
+		}
 	}
 }
 
@@ -177,11 +280,10 @@ func injectMediaBridgeIntoTarget(parent context.Context, info *target.Info) {
 	runCtx, runCancel := context.WithTimeout(ctx, 8*time.Second)
 	defer runCancel()
 	_ = chromedp.Run(runCtx, chromedp.ActionFunc(func(ctx context.Context) error {
+		_ = enableTargetAutoAttach(ctx)
 		_ = applyChromeUserAgent(ctx)
-		if _, err := page.AddScriptToEvaluateOnNewDocument(mediaBridgeScript).Do(ctx); err != nil {
-			return nil
-		}
-		_, _, _ = runtime.Evaluate(mediaBridgeScript).Do(ctx)
+		_, _ = page.AddScriptToEvaluateOnNewDocument(mediaBridgeScript).Do(ctx)
+		_, _, _ = runtime.Evaluate(mediaBridgeScript).WithUserGesture(true).WithAwaitPromise(true).Do(ctx)
 		return nil
 	}))
 }
@@ -421,8 +523,9 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   let destination;
   let mix;
   let analyser;
-  let silence;
+  let keepalive;
   let pendingBuffers = [];
+  const TIMER_MSG = '__presentation-timer-bridge';
   const remoteAudioTracks = new Set();
   let activeSources = [];
 
@@ -494,14 +597,16 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     mix.gain.value = 1;
     analyser = context.createAnalyser();
     analyser.fftSize = 256;
-    silence = context.createConstantSource();
-    const zero = context.createGain();
-    zero.gain.value = 0;
-    silence.connect(zero);
-    zero.connect(mix);
+    keepalive = context.createOscillator();
+    keepalive.type = 'sine';
+    keepalive.frequency.value = 18500;
+    const keepaliveGain = context.createGain();
+    keepaliveGain.gain.value = 0.0004;
+    keepalive.connect(keepaliveGain);
+    keepaliveGain.connect(mix);
     mix.connect(destination);
     mix.connect(analyser);
-    silence.start();
+    keepalive.start();
     log('audio.created', { state: context.state, sampleRate: context.sampleRate });
     resumeContext();
     return destination;
@@ -521,6 +626,17 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       channelCount: 1
     };
     try { Object.defineProperty(track, 'label', { configurable: true, get: () => 'Presentation Timer' }); } catch (_) {}
+    try { track.contentHint = 'music'; } catch (_) {}
+    try {
+      track.enabled = true;
+      Object.defineProperty(track, 'enabled', {
+        configurable: true,
+        get() { return true; },
+        set(value) { log('track.enabled.set', { value: Boolean(value) }); }
+      });
+    } catch (_) {
+      try { track.enabled = true; } catch (_) {}
+    }
     track.getSettings = () => Object.assign({}, settings);
     track.getCapabilities = () => ({
       deviceId: 'presentation-timer',
@@ -675,7 +791,19 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     applyVideoTrackEnabled();
     return videoTrack;
   };
+  const postToFrames = (type, payload) => {
+    const message = { source: TIMER_MSG, type, payload };
+    try {
+      document.querySelectorAll('iframe').forEach((frame) => {
+        try { frame.contentWindow?.postMessage(message, '*'); } catch (_) {}
+      });
+    } catch (_) {}
+    if (window.parent && window.parent !== window) {
+      try { window.parent.postMessage(message, '*'); } catch (_) {}
+    }
+  };
   const propagateCameraEnabled = (enabled) => {
+    postToFrames('setCameraEnabled', enabled);
     document.querySelectorAll('iframe').forEach((frame) => {
       try {
         injectIntoFrame(frame);
@@ -685,6 +813,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     });
   };
   const propagateVideoState = (payload) => {
+    postToFrames('setVideoState', payload);
     document.querySelectorAll('iframe').forEach((frame) => {
       try {
         injectIntoFrame(frame);
@@ -754,6 +883,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     window.__timerReceiveMuted = Boolean(muted);
     log('receive.muted', { muted: window.__timerReceiveMuted });
     applyReceiveMuteState();
+    postToFrames('setReceiveMuted', muted);
     document.querySelectorAll('iframe').forEach((frame) => {
       try {
         injectIntoFrame(frame);
@@ -802,14 +932,102 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     };
   }
 
-  const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
-  const originalEnumerateDevices = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
+  const syntheticGetUserMedia = async (constraints = {}) => {
+    log('getUserMedia', constraints || {});
+    if (constraints.audio) window.__presentationTimerMediaUsed = true;
+    const stream = new MediaStream();
+    if (constraints.audio) {
+      ensureAudio();
+      await resumeContext();
+      const src = ensureAudio().stream.getAudioTracks()[0];
+      stream.addTrack(hardenAudioTrack(src.clone ? src.clone() : src));
+    }
+    if (constraints.video) {
+      window.__presentationTimerMediaUsed = true;
+      const track = ensureVideo();
+      stream.addTrack(hardenVideoTrack(track.clone ? track.clone() : track));
+    }
+    return stream;
+  };
+  const replaceSyntheticTrack = (track) => {
+    if (!track || track.__timerSynthetic) return track;
+    if (track.kind === 'audio') {
+      ensureAudio();
+      const src = ensureAudio().stream.getAudioTracks()[0];
+      return hardenAudioTrack(src.clone ? src.clone() : src);
+    }
+    if (track.kind === 'video') {
+      return hardenVideoTrack(ensureVideo());
+    }
+    return track;
+  };
+  const syntheticAudioTrack = () => {
+    ensureAudio();
+    const src = ensureAudio().stream.getAudioTracks()[0];
+    return hardenAudioTrack(src.clone ? src.clone() : src);
+  };
+  const peerConnections = new Set();
+  const ensurePeerAudio = () => {
+    peerConnections.forEach((pc) => {
+      try {
+        pc.getSenders().forEach((sender) => {
+          if (!sender || !sender.track || sender.track.kind !== 'audio' || sender.track.__timerSynthetic) return;
+          sender.replaceTrack(syntheticAudioTrack()).catch((error) => {
+            log('rtc.ensureAudio.error', { error: String(error) });
+          });
+          log('rtc.ensureAudio', { replaced: true });
+        });
+      } catch (error) {
+        log('rtc.ensureAudio.error', { error: String(error) });
+      }
+    });
+  };
   const OriginalRTC = window.RTCPeerConnection;
+  const patchRTCPrototype = () => {
+    if (!OriginalRTC || !OriginalRTC.prototype || OriginalRTC.prototype.__timerPatched) return;
+    OriginalRTC.prototype.__timerPatched = true;
+    const originalAddTrack = OriginalRTC.prototype.addTrack;
+    if (originalAddTrack) {
+      OriginalRTC.prototype.addTrack = function(track, ...rest) {
+        const nextTrack = replaceSyntheticTrack(track);
+        if (nextTrack !== track) log('rtc.addTrack.replace', { kind: track.kind });
+        return originalAddTrack.call(this, nextTrack, ...rest);
+      };
+    }
+    const originalAddTransceiver = OriginalRTC.prototype.addTransceiver;
+    if (originalAddTransceiver) {
+      OriginalRTC.prototype.addTransceiver = function(trackOrKind, init) {
+        if (trackOrKind && typeof trackOrKind === 'object' && trackOrKind.kind) {
+          const nextTrack = replaceSyntheticTrack(trackOrKind);
+          if (nextTrack !== trackOrKind) log('rtc.addTransceiver.replace', { kind: trackOrKind.kind });
+          return originalAddTransceiver.call(this, nextTrack, init);
+        }
+        return originalAddTransceiver.call(this, trackOrKind, init);
+      };
+    }
+    const originalReplaceTrack = RTCRtpSender && RTCRtpSender.prototype.replaceTrack;
+    if (originalReplaceTrack && !RTCRtpSender.prototype.__timerReplacePatched) {
+      RTCRtpSender.prototype.__timerReplacePatched = true;
+      RTCRtpSender.prototype.replaceTrack = function(track) {
+        const kind = (track && track.kind) || (this.track && this.track.kind);
+        if (kind === 'audio' && (!track || !track.__timerSynthetic)) {
+          log('rtc.replaceTrack.replace', { hadTrack: Boolean(track) });
+          return originalReplaceTrack.call(this, syntheticAudioTrack());
+        }
+        return originalReplaceTrack.call(this, track);
+      };
+    }
+  };
+  patchRTCPrototype();
   if (typeof OriginalRTC === 'function') {
     window.RTCPeerConnection = function(...args) {
       window.__timerPeerCount = (window.__timerPeerCount || 0) + 1;
       log('rtc.create', { count: window.__timerPeerCount });
       const pc = new OriginalRTC(...args);
+      peerConnections.add(pc);
+      pc.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'closed') peerConnections.delete(pc);
+      });
       pc.addEventListener('track', (event) => {
         if (event.track) registerRemoteTrack(event.track);
         if (event.streams) {
@@ -821,37 +1039,33 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       return pc;
     };
     window.RTCPeerConnection.prototype = OriginalRTC.prototype;
+    patchRTCPrototype();
   }
-  if (navigator.mediaDevices && originalGetUserMedia) {
-    navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
-      log('getUserMedia', constraints || {});
-      if (constraints.audio) window.__presentationTimerMediaUsed = true;
-      const stream = new MediaStream();
-      if (constraints.audio) {
-        ensureAudio();
-        await resumeContext();
-        ensureAudio().stream.getAudioTracks().forEach((track) => stream.addTrack(hardenAudioTrack(track)));
-      }
-      if (constraints.video) {
-        window.__presentationTimerMediaUsed = true;
-        const track = ensureVideo();
-        stream.addTrack(hardenVideoTrack(track.clone ? track.clone() : track));
-      }
-      return stream;
+  const originalEnumerateDevices = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.getUserMedia = syntheticGetUserMedia;
+    if (window.MediaDevices && MediaDevices.prototype) {
+      MediaDevices.prototype.getUserMedia = syntheticGetUserMedia;
+    }
+    const syntheticEnumerate = async () => {
+      let outputs = [];
+      try {
+        const devices = originalEnumerateDevices ? await originalEnumerateDevices() : [];
+        outputs = devices.filter((device) => device.kind === 'audiooutput');
+      } catch (_) {}
+      log('enumerateDevices', { synthetic: true, outputs: outputs.length });
+      return [virtualMic(), virtualCamera()].concat(outputs);
     };
+    navigator.mediaDevices.enumerateDevices = syntheticEnumerate;
+    if (window.MediaDevices && MediaDevices.prototype) {
+      MediaDevices.prototype.enumerateDevices = syntheticEnumerate;
+    }
   }
-  if (navigator.mediaDevices && originalEnumerateDevices) {
-    navigator.mediaDevices.enumerateDevices = async () => {
-      const devices = await originalEnumerateDevices();
-      log('enumerateDevices', { count: devices.length });
-      const hasTimerAudio = devices.some((device) => (device.deviceId === 'presentation-timer' || device.label === 'Presentation Timer') && device.kind === 'audioinput');
-      const hasTimerVideo = devices.some((device) => (device.deviceId === 'presentation-timer' || device.label === 'Presentation Timer') && device.kind === 'videoinput');
-      const extras = [];
-      if (!hasTimerAudio) extras.push(virtualMic());
-      if (!hasTimerVideo) extras.push(virtualCamera());
-      return extras.length ? devices.concat(extras) : devices;
-    };
-  }
+  const legacyGetUserMedia = (constraints, success, error) => {
+    syntheticGetUserMedia(constraints).then(success).catch(error);
+  };
+  navigator.getUserMedia = legacyGetUserMedia;
+  navigator.webkitGetUserMedia = legacyGetUserMedia;
 
   if (typeof window.open === 'function') {
     const originalOpen = window.open.bind(window);
@@ -917,7 +1131,14 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchIframes);
   else watchIframes();
 
-  setInterval(() => { resumeContext(); updateLevel(); injectChildFrames(); suppressRemotePlayback(); }, 2000);
+  setInterval(() => {
+    resumeContext();
+    updateLevel();
+    injectChildFrames();
+    suppressRemotePlayback();
+    ensurePeerAudio();
+    try { if (window.__timerAudioTrack) window.__timerAudioTrack.enabled = true; } catch (_) {}
+  }, 2000);
   ['click', 'keydown', 'pointerdown'].forEach((name) => {
     window.addEventListener(name, () => { resumeContext(); }, true);
   });
@@ -946,9 +1167,16 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
       });
     return true;
   };
+  window.__timerResumeAudio = () => {
+    ensureAudio();
+    resumeContext();
+    ensurePeerAudio();
+    return context ? context.state : '';
+  };
   window.__timerPlayLocalWav = playLocalWav;
   window.__timerPlayWav = (base64) => {
     playLocalWav(base64);
+    postToFrames('playWav', base64);
     document.querySelectorAll('iframe').forEach((frame) => {
       try {
         injectIntoFrame(frame);
@@ -958,6 +1186,17 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     });
     return true;
   };
+  if (!window.__timerMessageBound) {
+    window.__timerMessageBound = true;
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || data.source !== TIMER_MSG) return;
+      if (data.type === 'playWav' && data.payload) playLocalWav(data.payload);
+      else if (data.type === 'setCameraEnabled') window.__timerSetCameraEnabled?.(data.payload);
+      else if (data.type === 'setVideoState') window.__timerSetVideoState?.(data.payload);
+      else if (data.type === 'setReceiveMuted') window.__timerSetReceiveMuted?.(data.payload);
+    });
+  }
 
   const localDiagnostics = () => {
     updateLevel();

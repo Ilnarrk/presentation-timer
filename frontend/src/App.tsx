@@ -1225,7 +1225,7 @@ function App() {
               />
               <span>Показывать отсчёт в камере</span>
             </label>
-            <p className="settings-hint">Участники увидят обратный отсчёт вместо пустой камеры участника «Таймер».</p>
+            
             <div className="connection-footer">
               <div className={`modal-actions${conferenceActive ? ' conference-active-actions' : ''}`}>
                 {!conferenceActive ? (

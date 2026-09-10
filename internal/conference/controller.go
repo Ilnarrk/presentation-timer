@@ -289,11 +289,10 @@ func (c *Controller) playWAV(wav []byte, markTested bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	expression := fmt.Sprintf(
-		`window.__timerLastAudioError = ''; Boolean(window.__timerPlayWav && window.__timerPlayWav(%q))`,
+		`window.__timerLastAudioError = ''; Boolean(window.__timerResumeAudio && window.__timerResumeAudio()); Boolean(window.__timerPlayWav && window.__timerPlayWav(%q))`,
 		base64.StdEncoding.EncodeToString(wav),
 	)
-	var accepted bool
-	err := browser.Evaluate(ctx, expression, &accepted)
+	accepted, err := browser.EvaluateAll(ctx, expression, true)
 	if err != nil {
 		c.failSession(runID, "Соединение с браузером ВКС потеряно. Подключитесь заново")
 		return fmt.Errorf("ошибка передачи звука в ВКС: %w", err)
@@ -354,8 +353,7 @@ func (c *Controller) evaluateReceiveMuted(browser Browser, muted bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	expression := fmt.Sprintf(setReceiveMutedScript, muted)
-	var ok bool
-	_ = browser.Evaluate(ctx, expression, &ok)
+	_, _ = browser.EvaluateAll(ctx, expression, false)
 }
 
 func (c *Controller) SetCameraEnabled(enabled bool) {
@@ -406,8 +404,7 @@ func (c *Controller) PushVideoState(payload VideoState) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	expression := fmt.Sprintf(`Boolean(window.__timerSetVideoState && window.__timerSetVideoState(%s))`, next)
-	var ok bool
-	_ = browser.Evaluate(ctx, expression, &ok)
+	_, _ = browser.EvaluateAll(ctx, expression, false)
 }
 
 func (c *Controller) applyCameraEnabled(browser Browser) {
@@ -421,8 +418,7 @@ func (c *Controller) evaluateCameraEnabled(browser Browser, enabled bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	expression := fmt.Sprintf(setCameraEnabledScript, enabled)
-	var ok bool
-	_ = browser.Evaluate(ctx, expression, &ok)
+	_, _ = browser.EvaluateAll(ctx, expression, false)
 }
 
 func (c *Controller) IsReady() bool {

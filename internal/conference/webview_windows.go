@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -31,6 +32,7 @@ const (
 	wmClose         = 0x0010
 	wmSetIcon       = 0x0080
 	wmAppSetVisible = 0x8001
+	wmAppSetMuted   = 0x8002
 	sizeMinimized   = 1
 	swHide          = 0
 	swShow          = 5
@@ -151,6 +153,18 @@ func (s *conferenceSession) setVisible(visible bool) {
 		wp = 1
 	}
 	procPostMessageW.Call(hwnd, wmAppSetVisible, wp, 0)
+}
+
+func (s *conferenceSession) setOutputMuted(muted bool) {
+	hwnd := atomic.LoadUintptr(&s.hwnd)
+	if hwnd == 0 {
+		return
+	}
+	wp := uintptr(0)
+	if muted {
+		wp = 1
+	}
+	procPostMessageW.Call(hwnd, wmAppSetMuted, wp, 0)
 }
 
 func startConferenceWebView(ctx context.Context, profileDir string) (*conferenceSession, error) {
@@ -462,6 +476,13 @@ func conferenceWndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 		}
 		if session != nil {
 			session.visible.Store(wparam != 0)
+		}
+		return 0
+	case wmAppSetMuted:
+		if session != nil && session.chromium != nil {
+			if err := setWebViewOutputMuted(session.chromium, wparam != 0); err != nil {
+				log.Printf("conference: webview output mute: %v", err)
+			}
 		}
 		return 0
 	case wmSize:

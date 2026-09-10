@@ -87,20 +87,35 @@ func (f *fakeBrowser) Evaluate(_ context.Context, expression string, result any)
 	if f.err != nil {
 		return f.err
 	}
+	assignFakeResult(f.result, result)
+	return nil
+}
+
+func (f *fakeBrowser) EvaluateAll(_ context.Context, expression string, _ bool) (bool, error) {
+	f.expr = expression
+	if f.err != nil {
+		return false, f.err
+	}
+	if value, ok := f.result.(bool); ok {
+		return value, nil
+	}
+	return true, nil
+}
+
+func assignFakeResult(value any, result any) {
 	switch target := result.(type) {
 	case *bool:
-		*target = f.result.(bool)
+		*target = value.(bool)
 	case *joinProbe:
-		*target = f.result.(joinProbe)
+		*target = value.(joinProbe)
 	case *string:
-		switch value := f.result.(type) {
+		switch typed := value.(type) {
 		case string:
-			*target = value
+			*target = typed
 		default:
-			*target = fmt.Sprint(value)
+			*target = fmt.Sprint(typed)
 		}
 	}
-	return nil
 }
 
 func (f *fakeBrowser) Description() string {
@@ -404,6 +419,25 @@ func TestMediaBridgeContainsVideoAPI(t *testing.T) {
 	}
 	if strings.Contains(mediaBridgeScript, "videoTrack.enabled =") {
 		t.Fatal("media bridge should not mute synthetic video track")
+	}
+}
+
+func TestMediaBridgePatchesSyntheticAudioDevices(t *testing.T) {
+	checks := []string{
+		"MediaDevices.prototype.getUserMedia",
+		"keepaliveGain.gain.value = 0.0004",
+		"rtc.addTrack.replace",
+		"rtc.replaceTrack.replace",
+		"postToFrames",
+		"TIMER_MSG",
+		"webkitGetUserMedia",
+		"synthetic: true",
+		"contentHint = 'music'",
+	}
+	for _, check := range checks {
+		if !strings.Contains(mediaBridgeScript, check) {
+			t.Fatalf("media bridge missing %q", check)
+		}
 	}
 }
 
