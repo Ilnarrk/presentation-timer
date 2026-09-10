@@ -586,12 +586,11 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     if (!videoPainter) return;
     const state = window.__timerVideoState || {};
     const enabled = Boolean(window.__timerCameraEnabled);
-    videoPainter.fillStyle = '#0f1218';
+    videoPainter.fillStyle = '#000000';
     videoPainter.fillRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
     if (!enabled) return;
     const phase = String(state.phase || 'idle');
     const isOvertime = phase.includes('Overtime');
-    const accent = isOvertime ? '#f59e0b' : '#4f7cff';
     videoPainter.fillStyle = '#8ea0c5';
     videoPainter.font = '600 48px "Segoe UI", system-ui, sans-serif';
     videoPainter.textAlign = 'center';
@@ -600,7 +599,7 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     const timeText = isOvertime
       ? '+' + formatClock(state.overtimeSeconds || 0)
       : formatClock(state.remainingSeconds || 0);
-    videoPainter.fillStyle = accent;
+    videoPainter.fillStyle = '#ffffff';
     videoPainter.font = '700 160px "Segoe UI", system-ui, sans-serif';
     videoPainter.fillText(timeText, VIDEO_WIDTH / 2, 400);
     if (state.isPaused) {
