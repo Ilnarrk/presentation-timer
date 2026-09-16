@@ -18,6 +18,11 @@ func TestWidgetPositionCorners(t *testing.T) {
 	if x != WidgetMargin || y != WidgetMargin {
 		t.Fatalf("top-left: got %d,%d", x, y)
 	}
+
+	x, y = WidgetPosition(work, settings.WidgetPlacementTopCenter, 0, 0)
+	if x != (1920-WidgetWidth)/2 || y != WidgetMargin {
+		t.Fatalf("top-center: got %d,%d", x, y)
+	}
 }
 
 func TestWidgetPositionFreeDefaultsToTopRight(t *testing.T) {
@@ -45,19 +50,11 @@ func TestWidgetPositionFallsBackForInvalidWorkArea(t *testing.T) {
 	}
 }
 
-func TestWidgetDimensions(t *testing.T) {
-	tests := []struct {
-		size          string
-		width, height int
-	}{
-		{settings.WidgetSizeCompact, 280, 88},
-		{settings.WidgetSizeStandard, WidgetWidth, WidgetHeight},
-		{settings.WidgetSizeLarge, 400, 120},
+func TestWidgetDefaultAndMinimumSizes(t *testing.T) {
+	if WidgetWidth != 400 || WidgetHeight != 120 {
+		t.Fatalf("unexpected default widget size: %dx%d", WidgetWidth, WidgetHeight)
 	}
-	for _, tt := range tests {
-		width, height := WidgetDimensions(tt.size)
-		if width != tt.width || height != tt.height {
-			t.Fatalf("%s: got %dx%d, want %dx%d", tt.size, width, height, tt.width, tt.height)
-		}
+	if WidgetMinWidth != 280 || WidgetMinHeight != 88 {
+		t.Fatalf("unexpected minimum widget size: %dx%d", WidgetMinWidth, WidgetMinHeight)
 	}
 }

@@ -16,6 +16,7 @@ const (
 	wsOverlappedWindow = 0x00CF0000
 	wsPopup            = 0x80000000
 	wsVisible          = 0x10000000
+	wsThickFrame       = 0x00040000
 	wsExDlgModalFrame  = 0x00000001
 
 	swpFrameChanged = 0x0020
@@ -27,6 +28,7 @@ const (
 
 var (
 	user32                    = windows.NewLazySystemDLL("user32")
+	dwmapi                    = windows.NewLazySystemDLL("dwmapi")
 	procFindWindowW           = user32.NewProc("FindWindowW")
 	procGetWindowLongPtrW     = user32.NewProc("GetWindowLongPtrW")
 	procSetWindowLongPtrW     = user32.NewProc("SetWindowLongPtrW")
@@ -35,6 +37,7 @@ var (
 	procMonitorFromRect       = user32.NewProc("MonitorFromRect")
 	procGetMonitorInfoW       = user32.NewProc("GetMonitorInfoW")
 	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
+	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
 )
 
 type monitorInfo struct {
@@ -128,7 +131,7 @@ func gwlParam(index int32) uintptr {
 	return uintptr(int(index))
 }
 
-func SetFrameless(hwnd uintptr, frameless bool) {
+func SetFrameless(hwnd uintptr, frameless, resizable bool) {
 	if hwnd == 0 {
 		return
 	}
@@ -136,6 +139,9 @@ func SetFrameless(hwnd uintptr, frameless bool) {
 		savedFrame.style, _, _ = procGetWindowLongPtrW.Call(hwnd, gwlParam(gwlStyle))
 		savedFrame.exStyle, _, _ = procGetWindowLongPtrW.Call(hwnd, gwlParam(gwlExStyle))
 		newStyle := savedFrame.style&^uintptr(wsOverlappedWindow) | uintptr(wsPopup|wsVisible)
+		if resizable {
+			newStyle |= uintptr(wsThickFrame)
+		}
 		newExStyle := savedFrame.exStyle &^ uintptr(wsExDlgModalFrame)
 		procSetWindowLongPtrW.Call(hwnd, gwlParam(gwlStyle), newStyle)
 		procSetWindowLongPtrW.Call(hwnd, gwlParam(gwlExStyle), newExStyle)
@@ -145,4 +151,21 @@ func SetFrameless(hwnd uintptr, frameless bool) {
 		savedFrame = frameState{}
 	}
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, uintptr(swpFrameChanged|swpNoActivate|swpShowWindow))
+}
+
+func SetRoundedCorners(hwnd uintptr, rounded bool) {
+	if hwnd == 0 {
+		return
+	}
+	const dwmwaWindowCornerPreference = 33
+	preference := uint32(1) // DWMWCP_DONOTROUND
+	if rounded {
+		preference = 2 // DWMWCP_ROUND
+	}
+	procDwmSetWindowAttribute.Call(
+		hwnd,
+		uintptr(dwmwaWindowCornerPreference),
+		uintptr(unsafe.Pointer(&preference)),
+		unsafe.Sizeof(preference),
+	)
 }

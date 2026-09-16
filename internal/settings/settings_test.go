@@ -125,6 +125,8 @@ func TestKeepSessionPreservesTemplate(t *testing.T) {
 	stored.SessionUseDefaultQuestions = true
 	stored.WidgetFreeX = 420
 	stored.WidgetFreeY = 64
+	stored.WidgetFreeWidth = 560
+	stored.WidgetFreeHeight = 160
 
 	input := Default()
 	input.TalkMinutes = 12
@@ -138,8 +140,8 @@ func TestKeepSessionPreservesTemplate(t *testing.T) {
 	if got.TalkMinutes != 12 {
 		t.Fatalf("non-session fields should stay: %+v", got)
 	}
-	if got.WidgetFreeX != 420 || got.WidgetFreeY != 64 {
-		t.Fatalf("saved free widget position should stay: %+v", got)
+	if got.WidgetFreeX != 420 || got.WidgetFreeY != 64 || got.WidgetFreeWidth != 560 || got.WidgetFreeHeight != 160 {
+		t.Fatalf("saved free widget bounds should stay: %+v", got)
 	}
 }
 
@@ -194,11 +196,13 @@ func TestWidgetPlacementRoundTrip(t *testing.T) {
 	input.WidgetPlacement = WidgetPlacementTopLeft
 	input.WidgetFreeX = 120
 	input.WidgetFreeY = 80
+	input.WidgetFreeWidth = 520
+	input.WidgetFreeHeight = 156
 	if err := store.Save(input); err != nil {
 		t.Fatal(err)
 	}
 	got := store.Get()
-	if got.WidgetPlacement != WidgetPlacementTopLeft || got.WidgetFreeX != 120 || got.WidgetFreeY != 80 {
+	if got.WidgetPlacement != WidgetPlacementTopLeft || got.WidgetFreeX != 120 || got.WidgetFreeY != 80 || got.WidgetFreeWidth != 520 || got.WidgetFreeHeight != 156 {
 		t.Fatalf("widget placement not saved: %+v", got)
 	}
 }
@@ -210,13 +214,12 @@ func TestWidgetAppearanceRoundTrip(t *testing.T) {
 	}
 	input := Default()
 	input.WidgetTheme = WidgetThemeLight
-	input.WidgetSize = WidgetSizeLarge
-	input.WidgetShape = WidgetShapePill
+	input.WidgetShape = WidgetShapeRectangular
 	if err := store.Save(input); err != nil {
 		t.Fatal(err)
 	}
 	got := store.Get()
-	if got.WidgetTheme != WidgetThemeLight || got.WidgetSize != WidgetSizeLarge || got.WidgetShape != WidgetShapePill {
+	if got.WidgetTheme != WidgetThemeLight || got.WidgetShape != WidgetShapeRectangular {
 		t.Fatalf("widget appearance not saved: %+v", got)
 	}
 }
@@ -224,11 +227,15 @@ func TestWidgetAppearanceRoundTrip(t *testing.T) {
 func TestNormalizeWidgetAppearance(t *testing.T) {
 	value := Default()
 	value.WidgetTheme = "invalid"
-	value.WidgetSize = "invalid"
 	value.WidgetShape = "invalid"
 	got := normalize(value, Default())
-	if got.WidgetTheme != WidgetThemeDark || got.WidgetSize != WidgetSizeStandard || got.WidgetShape != WidgetShapeRounded {
+	if got.WidgetTheme != WidgetThemeDark || got.WidgetShape != WidgetShapeRounded {
 		t.Fatalf("invalid widget appearance was not normalized: %+v", got)
+	}
+
+	value.WidgetShape = "square"
+	if got = normalize(value, Default()); got.WidgetShape != WidgetShapeRectangular {
+		t.Fatalf("legacy square shape was not migrated: %+v", got)
 	}
 }
 
@@ -238,5 +245,8 @@ func TestNormalizeWidgetPlacement(t *testing.T) {
 	}
 	if NormalizeWidgetPlacement(WidgetPlacementFree) != WidgetPlacementFree {
 		t.Fatal("free placement should stay free")
+	}
+	if NormalizeWidgetPlacement(WidgetPlacementTopCenter) != WidgetPlacementTopCenter {
+		t.Fatal("topCenter placement should stay topCenter")
 	}
 }

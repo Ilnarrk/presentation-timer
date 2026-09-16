@@ -14,4 +14,6 @@ func WorkAreaForBounds(_, _, _, _ int) WorkArea {
 	return WorkArea{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
 }
 
-func SetFrameless(_ uintptr, _ bool) {}
+func SetFrameless(_ uintptr, _, _ bool) {}
+
+func SetRoundedCorners(_ uintptr, _ bool) {}

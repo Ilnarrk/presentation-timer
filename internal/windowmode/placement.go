@@ -3,21 +3,12 @@ package windowmode
 import "timer/internal/settings"
 
 const (
-	WidgetWidth  = 340
-	WidgetHeight = 104
-	WidgetMargin = 12
+	WidgetWidth     = 400
+	WidgetHeight    = 120
+	WidgetMinWidth  = 280
+	WidgetMinHeight = 88
+	WidgetMargin    = 12
 )
-
-func WidgetDimensions(size string) (int, int) {
-	switch size {
-	case settings.WidgetSizeCompact:
-		return 280, 88
-	case settings.WidgetSizeLarge:
-		return 400, 120
-	default:
-		return WidgetWidth, WidgetHeight
-	}
-}
 
 type WorkArea struct {
 	Left   int
@@ -37,6 +28,8 @@ func WidgetPositionForSize(workArea WorkArea, placement string, freeX, freeY, wi
 	switch settings.NormalizeWidgetPlacement(placement) {
 	case settings.WidgetPlacementTopLeft:
 		return workArea.Left + WidgetMargin, workArea.Top + WidgetMargin
+	case settings.WidgetPlacementTopCenter:
+		return workArea.Left + (workArea.Right-workArea.Left-width)/2, workArea.Top + WidgetMargin
 	case settings.WidgetPlacementFree:
 		x, y := freeX, freeY
 		if x == 0 && y == 0 {

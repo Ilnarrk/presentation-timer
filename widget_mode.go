@@ -42,11 +42,27 @@ func (a *App) EnterWidgetMode() error {
 		a.normalBounds.w,
 		a.normalBounds.h,
 	)
-	widgetWidth, widgetHeight := windowmode.WidgetDimensions(s.WidgetSize)
+	freePlacement := settings.NormalizeWidgetPlacement(s.WidgetPlacement) == settings.WidgetPlacementFree
+	widgetWidth, widgetHeight := windowmode.WidgetWidth, windowmode.WidgetHeight
+	if freePlacement {
+		if s.WidgetFreeWidth > 0 {
+			widgetWidth = max(s.WidgetFreeWidth, windowmode.WidgetMinWidth)
+		}
+		if s.WidgetFreeHeight > 0 {
+			widgetHeight = max(s.WidgetFreeHeight, windowmode.WidgetMinHeight)
+		}
+		widgetWidth = min(widgetWidth, work.Right-work.Left)
+		widgetHeight = min(widgetHeight, work.Bottom-work.Top)
+	}
 	wx, wy := windowmode.WidgetPositionForSize(work, s.WidgetPlacement, s.WidgetFreeX, s.WidgetFreeY, widgetWidth, widgetHeight)
 
-	windowmode.SetFrameless(hwnd, true)
-	runtime.WindowSetMinSize(a.ctx, widgetWidth, widgetHeight)
+	windowmode.SetFrameless(hwnd, true, freePlacement)
+	windowmode.SetRoundedCorners(hwnd, s.WidgetShape != settings.WidgetShapeRectangular)
+	if freePlacement {
+		runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
+	} else {
+		runtime.WindowSetMinSize(a.ctx, widgetWidth, widgetHeight)
+	}
 	runtime.WindowSetSize(a.ctx, widgetWidth, widgetHeight)
 	runtime.WindowSetPosition(a.ctx, wx, wy)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
@@ -65,13 +81,17 @@ func (a *App) ExitWidgetMode() error {
 	s := a.settings.Get()
 	x, y := runtime.WindowGetPosition(a.ctx)
 	if settings.NormalizeWidgetPlacement(s.WidgetPlacement) == settings.WidgetPlacementFree {
+		w, h := runtime.WindowGetSize(a.ctx)
 		s.WidgetFreeX = x
 		s.WidgetFreeY = y
+		s.WidgetFreeWidth = w
+		s.WidgetFreeHeight = h
 		_ = a.settings.Save(s)
 	}
 
 	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
-	windowmode.SetFrameless(hwnd, false)
+	windowmode.SetFrameless(hwnd, false, false)
+	windowmode.SetRoundedCorners(hwnd, true)
 
 	minW := a.normalMinW
 	minH := a.normalMinH

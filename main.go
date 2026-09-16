@@ -34,15 +34,15 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 15, G: 18, B: 24, A: 1},
+		BackgroundColour: &options.RGBA{R: 15, G: 18, B: 24, A: 0},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind: []interface{}{
 			app,
 		},
 		Windows: &windows.Options{
-			WebviewIsTransparent: false,
-			WindowIsTranslucent:  false,
+			WebviewIsTransparent: true,
+			WindowIsTranslucent:  true,
 			Theme:                windows.Dark,
 			CustomTheme: &windows.ThemeSettings{
 				DarkModeTitleBar:          0x0018120f, // #0f1218

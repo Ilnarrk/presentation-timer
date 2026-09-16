@@ -37,10 +37,11 @@ type Settings struct {
 	TimerScalePercent          int      `json:"timerScalePercent"`
 	WidgetPlacement            string   `json:"widgetPlacement"`
 	WidgetTheme                string   `json:"widgetTheme"`
-	WidgetSize                 string   `json:"widgetSize"`
 	WidgetShape                string   `json:"widgetShape"`
 	WidgetFreeX                int      `json:"widgetFreeX"`
 	WidgetFreeY                int      `json:"widgetFreeY"`
+	WidgetFreeWidth            int      `json:"widgetFreeWidth"`
+	WidgetFreeHeight           int      `json:"widgetFreeHeight"`
 }
 
 const (
@@ -49,22 +50,19 @@ const (
 	DefaultTimerScalePercent = 115
 
 	WidgetPlacementTopRight = "topRight"
+	WidgetPlacementTopCenter = "topCenter"
 	WidgetPlacementTopLeft  = "topLeft"
 	WidgetPlacementFree     = "free"
 	WidgetThemeDark         = "dark"
 	WidgetThemeLight        = "light"
 	WidgetThemeViolet       = "violet"
-	WidgetSizeCompact       = "compact"
-	WidgetSizeStandard      = "standard"
-	WidgetSizeLarge         = "large"
 	WidgetShapeRounded      = "rounded"
-	WidgetShapePill         = "pill"
-	WidgetShapeSquare       = "square"
+	WidgetShapeRectangular  = "rectangular"
 )
 
 func NormalizeWidgetPlacement(placement string) string {
 	switch placement {
-	case WidgetPlacementTopLeft, WidgetPlacementFree:
+	case WidgetPlacementTopLeft, WidgetPlacementTopCenter, WidgetPlacementFree:
 		return placement
 	default:
 		return WidgetPlacementTopRight
@@ -93,7 +91,6 @@ func Default() Settings {
 		TimerScalePercent:          DefaultTimerScalePercent,
 		WidgetPlacement:            WidgetPlacementTopRight,
 		WidgetTheme:                WidgetThemeDark,
-		WidgetSize:                 WidgetSizeStandard,
 		WidgetShape:                WidgetShapeRounded,
 		WidgetFreeX:                0,
 		WidgetFreeY:                0,
@@ -172,6 +169,8 @@ func KeepSession(input, stored Settings) Settings {
 	input.SessionUseDefaultQuestions = stored.SessionUseDefaultQuestions
 	input.WidgetFreeX = stored.WidgetFreeX
 	input.WidgetFreeY = stored.WidgetFreeY
+	input.WidgetFreeWidth = stored.WidgetFreeWidth
+	input.WidgetFreeHeight = stored.WidgetFreeHeight
 	return input
 }
 
@@ -259,7 +258,7 @@ func normalize(value, fallback Settings) Settings {
 		value.TimerScalePercent = MaxTimerScalePercent
 	}
 	switch value.WidgetPlacement {
-	case WidgetPlacementTopLeft, WidgetPlacementFree:
+	case WidgetPlacementTopLeft, WidgetPlacementTopCenter, WidgetPlacementFree:
 	default:
 		if value.WidgetPlacement == "" {
 			value.WidgetPlacement = fallback.WidgetPlacement
@@ -275,13 +274,10 @@ func normalize(value, fallback Settings) Settings {
 	default:
 		value.WidgetTheme = WidgetThemeDark
 	}
-	switch value.WidgetSize {
-	case WidgetSizeCompact, WidgetSizeLarge:
-	default:
-		value.WidgetSize = WidgetSizeStandard
-	}
 	switch value.WidgetShape {
-	case WidgetShapePill, WidgetShapeSquare:
+	case WidgetShapeRectangular:
+	case "square":
+		value.WidgetShape = WidgetShapeRectangular
 	default:
 		value.WidgetShape = WidgetShapeRounded
 	}

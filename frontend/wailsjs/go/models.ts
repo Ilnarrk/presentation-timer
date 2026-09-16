@@ -227,10 +227,11 @@ export namespace settings {
 	    timerScalePercent: number;
 	    widgetPlacement: string;
 	    widgetTheme: string;
-	    widgetSize: string;
 	    widgetShape: string;
 	    widgetFreeX: number;
 	    widgetFreeY: number;
+	    widgetFreeWidth: number;
+	    widgetFreeHeight: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -266,10 +267,11 @@ export namespace settings {
 	        this.timerScalePercent = source["timerScalePercent"];
 	        this.widgetPlacement = source["widgetPlacement"];
 	        this.widgetTheme = source["widgetTheme"];
-	        this.widgetSize = source["widgetSize"];
 	        this.widgetShape = source["widgetShape"];
 	        this.widgetFreeX = source["widgetFreeX"];
 	        this.widgetFreeY = source["widgetFreeY"];
+	        this.widgetFreeWidth = source["widgetFreeWidth"];
+	        this.widgetFreeHeight = source["widgetFreeHeight"];
 	    }
 	}
 
