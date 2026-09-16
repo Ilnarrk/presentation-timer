@@ -2111,6 +2111,166 @@ body {
   text-align: center;
 }
 
+.widget-duration-control {
+  position: relative;
+  z-index: 2;
+  margin-top: clamp(4px, 1.5cqh, 8px);
+}
+
+.widget-duration-trigger {
+  --wails-draggable: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--widget-state) 32%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--widget-state) 10%, transparent);
+  color: var(--widget-state);
+  font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+.widget-duration-trigger:hover:not(:disabled),
+.widget-duration-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
+  border-color: color-mix(in srgb, var(--widget-state) 56%, transparent);
+}
+
+.widget-duration-trigger:disabled {
+  cursor: default;
+  opacity: 0.32;
+}
+
+.widget-duration-trigger i {
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.widget-duration-popover {
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 9px);
+  width: min(238px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--widget-state) 36%, rgba(255, 255, 255, 0.16));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--widget-surface) 94%, #000 6%);
+  color: var(--widget-text);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+  text-align: left;
+  transform: translateX(50%);
+  animation: widget-popover-in 140ms ease-out;
+}
+
+.widget-duration-label {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--widget-muted);
+  font-size: 0.72rem;
+}
+
+.widget-duration-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.widget-duration-presets button {
+  min-height: 32px;
+  padding: 4px 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--widget-text);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.widget-duration-presets button:hover,
+.widget-duration-presets button.is-selected {
+  border-color: color-mix(in srgb, var(--widget-state) 60%, transparent);
+  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
+  color: var(--widget-state);
+}
+
+.widget-duration-form {
+  margin-top: 10px;
+}
+
+.widget-duration-form label {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--widget-muted);
+  font-size: 0.72rem;
+}
+
+.widget-duration-form > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.widget-duration-form input {
+  min-width: 0;
+  height: 32px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 0.84rem;
+}
+
+.widget-duration-form > div > span {
+  color: var(--widget-muted);
+  font-size: 0.76rem;
+}
+
+.widget-duration-form button {
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--widget-state);
+  color: #071018;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.widget-duration-hint {
+  display: block;
+  margin-top: 9px;
+  color: var(--widget-muted);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+@keyframes widget-popover-in {
+  from { opacity: 0; transform: translate(50%, 4px) scale(0.97); }
+}
+
+.widget-duration-trigger:focus-visible,
+.widget-duration-popover button:focus-visible,
+.widget-duration-popover input:focus-visible {
+  outline: 2px solid var(--widget-state);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widget-duration-trigger,
+  .widget-duration-popover {
+    transition: none;
+    animation: none;
+  }
+}
+
 .widget-timer,
 .widget-mode.status-running .widget-timer,
 .widget-mode.status-paused .widget-timer,

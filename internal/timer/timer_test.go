@@ -176,6 +176,31 @@ func TestPausePreservesRemaining(t *testing.T) {
 	}
 }
 
+func TestSetTalkDurationWhilePausedAffectsNextSpeakerOnly(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	clock.Advance(2 * time.Minute)
+	engine.Pause()
+	if err := engine.SetTalkDuration(15 * time.Minute); err != nil {
+		t.Fatalf("set talk duration: %v", err)
+	}
+
+	snap := engine.Snapshot()
+	if !snap.IsPaused || snap.RemainingSeconds != 480 || snap.TalkSeconds != 900 {
+		t.Fatalf("duration change altered paused talk: %+v", snap)
+	}
+
+	if err := engine.NextSpeaker(); err != nil {
+		t.Fatalf("next speaker: %v", err)
+	}
+	snap = engine.Snapshot()
+	if snap.RemainingSeconds != 900 || snap.TalkSeconds != 900 {
+		t.Fatalf("next speaker did not use override: %+v", snap)
+	}
+}
+
 func TestInvalidTransitions(t *testing.T) {
 	engine := NewEngine(testConfig())
 

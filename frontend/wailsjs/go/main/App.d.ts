@@ -68,6 +68,8 @@ export function SaveSessionTemplate(arg1:session.Template):Promise<templates.Ent
 
 export function SaveSettings(arg1:settings.Settings):Promise<void>;
 
+export function SetTalkDurationOverride(arg1:number):Promise<void>;
+
 export function SetConferenceBrowserVisible(arg1:boolean):Promise<conference.State>;
 
 export function SetConferenceCameraEnabled(arg1:boolean):Promise<conference.State>;

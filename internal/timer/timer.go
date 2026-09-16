@@ -98,6 +98,22 @@ func (e *Engine) UpdateConfig(cfg Config) {
 	e.emitLocked()
 }
 
+// SetTalkDuration changes the duration used when a talk is started next.
+// A paused talk keeps its already calculated remaining time.
+func (e *Engine) SetTalkDuration(duration time.Duration) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if duration <= 0 {
+		return ErrInvalidDuration
+	}
+	if e.isRunning && !e.isPaused {
+		return ErrInvalidTransition
+	}
+	e.cfg.TalkDuration = duration
+	e.emitLocked()
+	return nil
+}
+
 func (e *Engine) Snapshot() Snapshot {
 	e.mu.Lock()
 	defer e.mu.Unlock()

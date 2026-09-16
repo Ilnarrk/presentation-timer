@@ -31,6 +31,7 @@ import {
   ResetSession,
   SaveSessionTemplate,
   SaveSettings,
+  SetTalkDurationOverride,
   SetConferenceBrowserVisible,
   SetConferenceCameraEnabled,
   Start,
@@ -346,6 +347,9 @@ function App() {
   const [widgetColors, setWidgetColors] = useState<WidgetColorSettings>(EMPTY_WIDGET_COLORS);
   const [widgetColorPreviewKey, setWidgetColorPreviewKey] = useState<WidgetColorKey | null>(null);
   const [widgetMode, setWidgetMode] = useState(false);
+  const [widgetDurationOpen, setWidgetDurationOpen] = useState(false);
+  const [widgetDurationDraft, setWidgetDurationDraft] = useState(10);
+  const widgetDurationRef = useRef<HTMLDivElement>(null);
 
   const settingsLocked = snapshot.isRunning;
   const settingsLockMessage = useMemo(() => {
@@ -554,6 +558,24 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!widgetDurationOpen) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!widgetDurationRef.current?.contains(event.target as Node)) {
+        setWidgetDurationOpen(false);
+      }
+    };
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setWidgetDurationOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [widgetDurationOpen]);
+
+  useEffect(() => {
     const unsubscribe = EventsOn('timer:state', (state: TimerSnapshot) => {
       setSnapshot(state);
     });
@@ -647,6 +669,23 @@ function App() {
   const handleNextSpeaker = async () => {
     try {
       await NextSpeaker();
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
+  const openWidgetDuration = () => {
+    setWidgetDurationDraft(widgetDurationMinutes);
+    setWidgetDurationOpen(true);
+  };
+  const applyWidgetDuration = async () => {
+    const minutes = Math.min(180, Math.max(1, parseNumberInput(String(widgetDurationDraft), 180)));
+    try {
+      await SetTalkDurationOverride(minutes);
+      setWidgetDurationDraft(minutes);
+      setWidgetDurationOpen(false);
       setError('');
     } catch (err) {
       setError(String(err));
@@ -1108,6 +1147,53 @@ function App() {
           </div>
           <div className="widget-body" ref={widgetBodyRef}>
             <span className="widget-timer" ref={widgetTimerRef} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
+            <div className="widget-duration-control" ref={widgetDurationRef}>
+              <button
+                className="widget-duration-trigger"
+                type="button"
+                onClick={openWidgetDuration}
+                disabled={snapshot.isRunning && !snapshot.isPaused}
+                aria-expanded={widgetDurationOpen}
+                aria-haspopup="dialog"
+                aria-label={`Время следующего докладчика: ${widgetDurationMinutes} минут`}
+              >
+                <span>{widgetDurationMinutes} мин</span><i aria-hidden="true" />
+              </button>
+              {widgetDurationOpen && (
+                <div className="widget-duration-popover" role="dialog" aria-label="Время следующего докладчика">
+                  <span className="widget-duration-label">Следующий докладчик</span>
+                  <div className="widget-duration-presets" role="group" aria-label="Быстрый выбор времени">
+                    {[5, 10, 15, 20].map((minutes) => (
+                      <button
+                        key={minutes}
+                        type="button"
+                        className={widgetDurationDraft === minutes ? 'is-selected' : ''}
+                        aria-pressed={widgetDurationDraft === minutes}
+                        onClick={() => setWidgetDurationDraft(minutes)}
+                      >{minutes}</button>
+                    ))}
+                  </div>
+                  <form className="widget-duration-form" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
+                    <label htmlFor="widget-duration-minutes">Свое время</label>
+                    <div>
+                      <input
+                        id="widget-duration-minutes"
+                        type="number"
+                        min="1"
+                        max="180"
+                        step="1"
+                        value={widgetDurationDraft}
+                        onChange={(event) => setWidgetDurationDraft(parseNumberInput(event.target.value, 180))}
+                        autoFocus
+                      />
+                      <span>мин</span>
+                      <button type="submit">Готово</button>
+                    </div>
+                  </form>
+                  <span className="widget-duration-hint">Применится при переходе к следующему</span>
+                </div>
+              )}
+            </div>
           </div>
           <button
             className="icon-button quiet widget-restore"
