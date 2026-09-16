@@ -32,6 +32,7 @@ import {
   SaveSessionTemplate,
   SaveSettings,
   SetTalkDurationOverride,
+  SetWidgetQuickTimeOpen,
   SetConferenceBrowserVisible,
   SetConferenceCameraEnabled,
   Start,
@@ -349,6 +350,8 @@ function App() {
   const [widgetMode, setWidgetMode] = useState(false);
   const [widgetDurationOpen, setWidgetDurationOpen] = useState(false);
   const [widgetDurationDraft, setWidgetDurationDraft] = useState(10);
+  const [widgetDurationCustomOpen, setWidgetDurationCustomOpen] = useState(false);
+  const [widgetDurationInvalid, setWidgetDurationInvalid] = useState(false);
   const widgetDurationRef = useRef<HTMLDivElement>(null);
 
   const settingsLocked = snapshot.isRunning;
@@ -562,10 +565,16 @@ function App() {
     const handlePointerDown = (event: PointerEvent) => {
       if (!widgetDurationRef.current?.contains(event.target as Node)) {
         setWidgetDurationOpen(false);
+        setWidgetDurationCustomOpen(false);
+        void SetWidgetQuickTimeOpen(false);
       }
     };
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setWidgetDurationOpen(false);
+      if (event.key === 'Escape') {
+        setWidgetDurationOpen(false);
+        setWidgetDurationCustomOpen(false);
+        void SetWidgetQuickTimeOpen(false);
+      }
     };
     document.addEventListener('pointerdown', handlePointerDown);
     document.addEventListener('keydown', handleKeyDown);
@@ -676,16 +685,33 @@ function App() {
   };
 
   const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
-  const openWidgetDuration = () => {
+  const openWidgetDuration = async () => {
     setWidgetDurationDraft(widgetDurationMinutes);
-    setWidgetDurationOpen(true);
-  };
-  const applyWidgetDuration = async () => {
-    const minutes = Math.min(180, Math.max(1, parseNumberInput(String(widgetDurationDraft), 180)));
+    setWidgetDurationCustomOpen(false);
+    setWidgetDurationInvalid(false);
     try {
-      await SetTalkDurationOverride(minutes);
-      setWidgetDurationDraft(minutes);
-      setWidgetDurationOpen(false);
+      await SetWidgetQuickTimeOpen(true);
+      setWidgetDurationOpen(true);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+  const closeWidgetDuration = () => {
+    setWidgetDurationOpen(false);
+    setWidgetDurationCustomOpen(false);
+    setWidgetDurationInvalid(false);
+    void SetWidgetQuickTimeOpen(false);
+  };
+  const applyWidgetDuration = async (value = widgetDurationDraft) => {
+    if (value < 1 || value > 180) {
+      setWidgetDurationInvalid(true);
+      return;
+    }
+    try {
+      await SetTalkDurationOverride(value);
+      setWidgetDurationDraft(value);
+      closeWidgetDuration();
       setError('');
     } catch (err) {
       setError(String(err));
@@ -1066,7 +1092,7 @@ function App() {
     active: settingsOpen && settingsTab === 'interface',
   });
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -1084,6 +1110,8 @@ function App() {
       trash: <><path d="M5 7h14" /><path d="M9.5 7V5.5h5V7" /><path d="M8 7l.7 11.5h6.6L16 7" /></>,
       widget: <><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" /><rect x="13" y="6.5" width="5.5" height="4.5" rx="1" /></>,
       restore: <><rect x="6.5" y="6.5" width="12" height="12" rx="1.8" /><path d="M9.5 6.5v-.7A1.8 1.8 0 0 1 11.3 4h6.9A1.8 1.8 0 0 1 20 5.8v6.9a1.8 1.8 0 0 1-1.5 1.8" /></>,
+      clock: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
+      edit: <><path d="m5 16-.8 4 4-.8L19 8.4a2.1 2.1 0 0 0-3-3L5 16Z" /><path d="m14.5 7.5 3 3" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -1125,10 +1153,11 @@ function App() {
         className={`app-shell widget-mode ${statusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
         style={{ ...widgetColorStyle, ...shellFontStyle }}
       >
-        <div
-          className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
-          style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
-        >
+        <div className="widget-stack" ref={widgetDurationRef}>
+          <div
+            className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
+            style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
+          >
           <div className="widget-controls" aria-label="Управление таймером">
             <button
               className={`widget-primary widget-action-${widgetAction}`}
@@ -1147,52 +1176,18 @@ function App() {
           </div>
           <div className="widget-body" ref={widgetBodyRef}>
             <span className="widget-timer" ref={widgetTimerRef} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
-            <div className="widget-duration-control" ref={widgetDurationRef}>
+            <div className="widget-duration-control">
               <button
                 className="widget-duration-trigger"
                 type="button"
                 onClick={openWidgetDuration}
-                disabled={snapshot.isRunning && !snapshot.isPaused}
+                disabled={!widgetIsPaused}
                 aria-expanded={widgetDurationOpen}
-                aria-haspopup="dialog"
+                aria-controls="quick-time-panel"
                 aria-label={`Время следующего докладчика: ${widgetDurationMinutes} минут`}
               >
                 <span>{widgetDurationMinutes} мин</span><i aria-hidden="true" />
               </button>
-              {widgetDurationOpen && (
-                <div className="widget-duration-popover" role="dialog" aria-label="Время следующего докладчика">
-                  <span className="widget-duration-label">Следующий докладчик</span>
-                  <div className="widget-duration-presets" role="group" aria-label="Быстрый выбор времени">
-                    {[5, 10, 15, 20].map((minutes) => (
-                      <button
-                        key={minutes}
-                        type="button"
-                        className={widgetDurationDraft === minutes ? 'is-selected' : ''}
-                        aria-pressed={widgetDurationDraft === minutes}
-                        onClick={() => setWidgetDurationDraft(minutes)}
-                      >{minutes}</button>
-                    ))}
-                  </div>
-                  <form className="widget-duration-form" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
-                    <label htmlFor="widget-duration-minutes">Свое время</label>
-                    <div>
-                      <input
-                        id="widget-duration-minutes"
-                        type="number"
-                        min="1"
-                        max="180"
-                        step="1"
-                        value={widgetDurationDraft}
-                        onChange={(event) => setWidgetDurationDraft(parseNumberInput(event.target.value, 180))}
-                        autoFocus
-                      />
-                      <span>мин</span>
-                      <button type="submit">Готово</button>
-                    </div>
-                  </form>
-                  <span className="widget-duration-hint">Применится при переходе к следующему</span>
-                </div>
-              )}
             </div>
           </div>
           <button
@@ -1203,6 +1198,53 @@ function App() {
           >
             {icon('restore')}
           </button>
+          </div>
+          {widgetDurationOpen && (
+            <section id="quick-time-panel" className="quick-time-panel" aria-label="Время следующего докладчика">
+              <header className="quick-time-header">
+                <span className="quick-time-title">{icon('clock')} Следующий докладчик</span>
+                <span className="quick-time-hints">Enter — применить&nbsp;&nbsp; Esc — закрыть</span>
+              </header>
+              <div className="quick-time-presets" role="group" aria-label="Быстрый выбор времени">
+                {[5, 10, 15, 20].map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    className={`quick-time-preset${widgetDurationMinutes === minutes ? ' is-selected' : ''}`}
+                    aria-pressed={widgetDurationMinutes === minutes}
+                    onClick={() => void applyWidgetDuration(minutes)}
+                  >
+                    <strong>{minutes}</strong><span>мин</span>
+                  </button>
+                ))}
+                {!widgetDurationCustomOpen ? (
+                  <button type="button" className="quick-time-preset quick-time-custom-trigger" onClick={() => setWidgetDurationCustomOpen(true)}>
+                    <strong aria-hidden="true">{icon('edit')}</strong><span>Своё время</span>
+                  </button>
+                ) : (
+                  <form className="quick-time-custom" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
+                    <label htmlFor="widget-duration-minutes">Минуты</label>
+                    <input
+                      id="widget-duration-minutes"
+                      type="number"
+                      min="1"
+                      max="180"
+                      step="1"
+                      value={widgetDurationDraft}
+                      aria-invalid={widgetDurationInvalid}
+                      onChange={(event) => {
+                        setWidgetDurationDraft(parseNumberInput(event.target.value, 180));
+                        setWidgetDurationInvalid(false);
+                      }}
+                      autoFocus
+                    />
+                    <button type="submit">Готово</button>
+                    {widgetDurationInvalid && <span className="quick-time-error">1–180 мин</span>}
+                  </form>
+                )}
+              </div>
+            </section>
+          )}
         </div>
       </div>
     );

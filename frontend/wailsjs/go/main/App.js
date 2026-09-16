@@ -126,6 +126,10 @@ export function SetTalkDurationOverride(arg1) {
   return window['go']['main']['App']['SetTalkDurationOverride'](arg1);
 }
 
+export function SetWidgetQuickTimeOpen(arg1) {
+  return window['go']['main']['App']['SetWidgetQuickTimeOpen'](arg1);
+}
+
 export function SetConferenceBrowserVisible(arg1) {
   return window['go']['main']['App']['SetConferenceBrowserVisible'](arg1);
 }

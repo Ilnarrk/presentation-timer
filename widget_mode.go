@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	normalWindowMinWidth  = 800
-	normalWindowMinHeight = 600
+	normalWindowMinWidth       = 800
+	normalWindowMinHeight      = 600
+	widgetQuickTimePanelHeight = 144
 )
 
 type windowBounds struct {
@@ -70,7 +71,57 @@ func (a *App) EnterWidgetMode() error {
 	runtime.WindowSetPosition(a.ctx, wx, wy)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.widgetMode = true
+	a.widgetQuickTimeOpen = false
+	a.widgetCompactBounds = windowBounds{w: widgetWidth, h: widgetHeight}
 	runtime.EventsEmit(a.ctx, "window:widget", true)
+	return nil
+}
+
+func (a *App) SetWidgetQuickTimeOpen(open bool) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.ctx == nil || !a.widgetMode || a.widgetQuickTimeOpen == open {
+		return nil
+	}
+
+	work := windowmode.WorkAreaForBounds(a.normalBounds.x, a.normalBounds.y, a.normalBounds.w, a.normalBounds.h)
+	x, y := runtime.WindowGetPosition(a.ctx)
+	w, h := runtime.WindowGetSize(a.ctx)
+	freePlacement := settings.NormalizeWidgetPlacement(a.settings.Get().WidgetPlacement) == settings.WidgetPlacementFree
+
+	if open {
+		a.widgetCompactBounds = windowBounds{w: w, h: h}
+		targetHeight := min(h+widgetQuickTimePanelHeight, work.Bottom-work.Top)
+		if freePlacement {
+			runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
+			runtime.WindowSetMaxSize(a.ctx, windowmode.WidgetMaxWidth, windowmode.WidgetMaxHeight)
+		} else {
+			runtime.WindowSetMinSize(a.ctx, w, targetHeight)
+			runtime.WindowSetMaxSize(a.ctx, w, targetHeight)
+		}
+		runtime.WindowSetSize(a.ctx, w, targetHeight)
+		if y+targetHeight > work.Bottom {
+			y = max(work.Top, work.Bottom-targetHeight)
+		}
+		runtime.WindowSetPosition(a.ctx, x, y)
+	} else {
+		compact := a.widgetCompactBounds
+		if compact.w <= 0 || compact.h <= 0 {
+			compact = windowBounds{w: windowmode.WidgetWidth, h: windowmode.WidgetHeight}
+		}
+		if freePlacement {
+			runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
+			runtime.WindowSetMaxSize(a.ctx, windowmode.WidgetMaxWidth, windowmode.WidgetMaxHeight)
+		} else {
+			runtime.WindowSetMinSize(a.ctx, compact.w, compact.h)
+			runtime.WindowSetMaxSize(a.ctx, compact.w, compact.h)
+		}
+		runtime.WindowSetSize(a.ctx, compact.w, compact.h)
+		x, y = windowmode.ClampPosition(work, compact.w, compact.h, x, y)
+		runtime.WindowSetPosition(a.ctx, x, y)
+	}
+
+	a.widgetQuickTimeOpen = open
 	return nil
 }
 
@@ -84,6 +135,10 @@ func (a *App) saveWidgetBounds() {
 	}
 	x, y := runtime.WindowGetPosition(a.ctx)
 	w, h := runtime.WindowGetSize(a.ctx)
+	if a.widgetQuickTimeOpen && a.widgetCompactBounds.w > 0 && a.widgetCompactBounds.h > 0 {
+		w = a.widgetCompactBounds.w
+		h = a.widgetCompactBounds.h
+	}
 	s.WidgetFreeX = x
 	s.WidgetFreeY = y
 	s.WidgetFreeWidth = min(max(w, windowmode.WidgetMinWidth), windowmode.WidgetMaxWidth)
@@ -168,6 +223,7 @@ func (a *App) ExitWidgetMode() error {
 	runtime.WindowSetPosition(a.ctx, a.normalBounds.x, a.normalBounds.y)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.widgetMode = false
+	a.widgetQuickTimeOpen = false
 	runtime.EventsEmit(a.ctx, "window:widget", false)
 	return nil
 }

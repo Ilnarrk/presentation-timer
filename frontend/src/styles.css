@@ -2073,12 +2073,14 @@ body {
 .widget-chrome {
   position: relative;
   display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
   container-type: size;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: clamp(6px, 2.5cqw, 14px);
   width: 100%;
-  height: 100%;
+  height: auto;
   padding: clamp(8px, 6cqh, 14px) clamp(10px, 4cqw, 18px);
   border: 0;
   border-radius: var(--widget-radius);
@@ -2111,6 +2113,15 @@ body {
   text-align: center;
 }
 
+.widget-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+}
+
 .widget-duration-control {
   position: relative;
   z-index: 2;
@@ -2122,27 +2133,27 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 28px;
-  padding: 4px 9px;
-  border: 1px solid color-mix(in srgb, var(--widget-state) 32%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--widget-state) 10%, transparent);
-  color: var(--widget-state);
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--widget-muted);
   font-size: clamp(0.68rem, 2.8cqw, 0.82rem);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, opacity 150ms ease;
+  opacity: 0.82;
+  transition: color 150ms ease, opacity 150ms ease;
 }
 
 .widget-duration-trigger:hover:not(:disabled),
 .widget-duration-trigger[aria-expanded="true"] {
-  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
-  border-color: color-mix(in srgb, var(--widget-state) 56%, transparent);
+  color: var(--widget-state);
+  opacity: 1;
 }
 
 .widget-duration-trigger:disabled {
   cursor: default;
-  opacity: 0.32;
+  opacity: 0.28;
 }
 
 .widget-duration-trigger i {
@@ -2151,121 +2162,224 @@ body {
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
+  transition: transform 150ms ease;
 }
 
-.widget-duration-popover {
-  position: absolute;
-  right: 50%;
-  bottom: calc(100% + 9px);
-  width: min(238px, calc(100vw - 24px));
-  padding: 12px;
-  border: 1px solid color-mix(in srgb, var(--widget-state) 36%, rgba(255, 255, 255, 0.16));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--widget-surface) 94%, #000 6%);
+.widget-duration-trigger[aria-expanded="true"] i {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.quick-time-panel {
+  --wails-draggable: no-drag;
+  flex: 0 0 136px;
+  margin: 0 8px;
+  padding: 14px 16px 16px;
+  border: 1px solid color-mix(in srgb, var(--widget-state) 46%, rgba(255, 255, 255, 0.14));
+  border-radius: clamp(18px, 3cqh, 24px);
+  background: rgba(8, 13, 24, 0.97);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.48);
   color: var(--widget-text);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
-  text-align: left;
-  transform: translateX(50%);
-  animation: widget-popover-in 140ms ease-out;
+  animation: quick-time-panel-in 180ms ease-out;
 }
 
-.widget-duration-label {
-  display: block;
-  margin-bottom: 9px;
-  color: var(--widget-muted);
-  font-size: 0.72rem;
+.widget-theme-light .quick-time-panel {
+  background: rgba(247, 250, 255, 0.98);
 }
 
-.widget-duration-presets {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+.widget-theme-green .quick-time-panel {
+  background: rgba(5, 93, 59, 0.98);
 }
 
-.widget-duration-presets button {
-  min-height: 32px;
-  padding: 4px 2px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--widget-text);
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.widget-duration-presets button:hover,
-.widget-duration-presets button.is-selected {
-  border-color: color-mix(in srgb, var(--widget-state) 60%, transparent);
-  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
-  color: var(--widget-state);
-}
-
-.widget-duration-form {
-  margin-top: 10px;
-}
-
-.widget-duration-form label {
-  display: block;
-  margin: 0 0 5px;
-  color: var(--widget-muted);
-  font-size: 0.72rem;
-}
-
-.widget-duration-form > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+.quick-time-header {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 20px;
+  margin-bottom: 12px;
 }
 
-.widget-duration-form input {
-  min-width: 0;
-  height: 32px;
-  padding: 5px 8px;
-  border-radius: 8px;
-  font-size: 0.84rem;
-}
-
-.widget-duration-form > div > span {
-  color: var(--widget-muted);
-  font-size: 0.76rem;
-}
-
-.widget-duration-form button {
-  min-height: 32px;
-  padding: 5px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--widget-state);
-  color: #071018;
-  cursor: pointer;
-  font-size: 0.76rem;
+.quick-time-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--widget-text);
+  font-size: 0.82rem;
   font-weight: 600;
 }
 
-.widget-duration-hint {
-  display: block;
-  margin-top: 9px;
-  color: var(--widget-muted);
-  font-size: 0.68rem;
-  line-height: 1.35;
+.quick-time-title svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--widget-state);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-@keyframes widget-popover-in {
-  from { opacity: 0; transform: translate(50%, 4px) scale(0.97); }
+.quick-time-hints {
+  color: var(--widget-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.quick-time-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(132px, 1.6fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.quick-time-preset {
+  --wails-draggable: no-drag;
+  display: flex;
+  min-width: 0;
+  min-height: 68px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--widget-text);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.quick-time-preset:hover,
+.quick-time-preset.is-selected {
+  border-color: color-mix(in srgb, var(--widget-state) 72%, transparent);
+  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
+}
+
+.quick-time-preset:active {
+  transform: scale(0.98);
+}
+
+.quick-time-preset strong {
+  color: var(--widget-state);
+  font-size: clamp(1.05rem, 3cqw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.quick-time-preset span {
+  color: var(--widget-muted);
+  font-size: 0.68rem;
+}
+
+.quick-time-custom-trigger {
+  flex-direction: row;
+  gap: 8px;
+  color: var(--widget-muted);
+  font-size: 0.78rem;
+}
+
+.quick-time-custom-trigger strong {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+}
+
+.quick-time-custom-trigger strong svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.quick-time-custom {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(48px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 132px;
+  min-height: 68px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--widget-state) 64%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--widget-state) 12%, transparent);
+}
+
+.quick-time-custom label {
+  margin: 0;
+  color: var(--widget-muted);
+  font-size: 0.68rem;
+}
+
+.quick-time-custom input {
+  min-width: 0;
+  width: 52px;
+  height: 36px;
+  padding: 5px 7px;
+  border-radius: 9px;
+  text-align: center;
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-time-custom button {
+  min-height: 36px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--widget-state);
+  color: #071018;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.quick-time-error {
+  position: absolute;
+  left: 8px;
+  bottom: -16px;
+  color: #ff8794;
+  font-size: 0.65rem;
 }
 
 .widget-duration-trigger:focus-visible,
-.widget-duration-popover button:focus-visible,
-.widget-duration-popover input:focus-visible {
+.quick-time-preset:focus-visible,
+.quick-time-custom input:focus-visible,
+.quick-time-custom button:focus-visible {
   outline: 2px solid var(--widget-state);
   outline-offset: 2px;
 }
 
+@keyframes quick-time-panel-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
+@media (max-width: 520px), (max-height: 180px) {
+  .quick-time-panel {
+    padding-inline: 10px;
+  }
+
+  .quick-time-hints {
+    display: none;
+  }
+
+  .quick-time-presets {
+    gap: 5px;
+  }
+
+  .quick-time-preset {
+    padding-inline: 3px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .widget-duration-trigger,
-  .widget-duration-popover {
+  .widget-duration-trigger i,
+  .quick-time-panel,
+  .quick-time-preset {
     transition: none;
     animation: none;
   }

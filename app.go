@@ -32,8 +32,10 @@ type App struct {
 	conference   *conference.Controller
 	projectFS    fs.FS
 	windowTitle  string
-	widgetMode   bool
-	normalBounds windowBounds
+	widgetMode          bool
+	widgetQuickTimeOpen bool
+	widgetCompactBounds windowBounds
+	normalBounds        windowBounds
 	normalMinW   int
 	normalMinH   int
 }

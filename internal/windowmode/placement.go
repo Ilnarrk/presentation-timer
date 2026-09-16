@@ -8,7 +8,7 @@ const (
 	WidgetMinWidth  = 360
 	WidgetMinHeight = 88
 	WidgetMaxWidth  = 800
-	WidgetMaxHeight = 240
+	WidgetMaxHeight = 320
 	WidgetMargin    = 2
 )
 
