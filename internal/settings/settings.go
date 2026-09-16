@@ -9,21 +9,21 @@ import (
 )
 
 type Settings struct {
-	TalkMinutes         int      `json:"talkMinutes"`
-	TalkSeconds         int      `json:"talkSeconds"`
-	QuestionsMinutes    int      `json:"questionsMinutes"`
-	QuestionsSeconds    int      `json:"questionsSeconds"`
-	ReminderMinutes     int      `json:"reminderMinutes"`
-	ReminderSeconds     int      `json:"reminderSeconds"`
-	SoundID             string   `json:"soundId"`
-	ReminderSoundID     string   `json:"reminderSoundId"`
-	QuestionsSoundID    string   `json:"questionsSoundId"`
-	NextSoundID         string   `json:"nextSoundId"`
-	DeviceID            string   `json:"deviceId"`
-	Volume              float64  `json:"volume"`
-	MuteConferenceSound       bool `json:"muteConferenceSound"`
-	MuteConferenceReceive     bool `json:"muteConferenceReceive"`
-	ConferenceCameraEnabled   bool `json:"conferenceCameraEnabled"`
+	TalkMinutes                int      `json:"talkMinutes"`
+	TalkSeconds                int      `json:"talkSeconds"`
+	QuestionsMinutes           int      `json:"questionsMinutes"`
+	QuestionsSeconds           int      `json:"questionsSeconds"`
+	ReminderMinutes            int      `json:"reminderMinutes"`
+	ReminderSeconds            int      `json:"reminderSeconds"`
+	SoundID                    string   `json:"soundId"`
+	ReminderSoundID            string   `json:"reminderSoundId"`
+	QuestionsSoundID           string   `json:"questionsSoundId"`
+	NextSoundID                string   `json:"nextSoundId"`
+	DeviceID                   string   `json:"deviceId"`
+	Volume                     float64  `json:"volume"`
+	MuteConferenceSound        bool     `json:"muteConferenceSound"`
+	MuteConferenceReceive      bool     `json:"muteConferenceReceive"`
+	ConferenceCameraEnabled    bool     `json:"conferenceCameraEnabled"`
 	SessionTotalMinutes        int      `json:"sessionTotalMinutes"`
 	SessionTotalSeconds        int      `json:"sessionTotalSeconds"`
 	SessionSpeakerCount        int      `json:"sessionSpeakerCount"`
@@ -34,27 +34,54 @@ type Settings struct {
 	SessionQuestionsSeconds    int      `json:"sessionQuestionsSeconds"`
 	SessionUseDefaultTalk      bool     `json:"sessionUseDefaultTalk"`
 	SessionUseDefaultQuestions bool     `json:"sessionUseDefaultQuestions"`
+	TimerScalePercent          int      `json:"timerScalePercent"`
+	WidgetPlacement            string   `json:"widgetPlacement"`
+	WidgetFreeX                int      `json:"widgetFreeX"`
+	WidgetFreeY                int      `json:"widgetFreeY"`
+}
+
+const (
+	MinTimerScalePercent     = 80
+	MaxTimerScalePercent     = 140
+	DefaultTimerScalePercent = 115
+
+	WidgetPlacementTopRight = "topRight"
+	WidgetPlacementTopLeft  = "topLeft"
+	WidgetPlacementFree     = "free"
+)
+
+func NormalizeWidgetPlacement(placement string) string {
+	switch placement {
+	case WidgetPlacementTopLeft, WidgetPlacementFree:
+		return placement
+	default:
+		return WidgetPlacementTopRight
+	}
 }
 
 func Default() Settings {
 	return Settings{
-		TalkMinutes:         10,
-		TalkSeconds:         0,
-		QuestionsMinutes:    5,
-		QuestionsSeconds:    0,
-		ReminderMinutes:     2,
-		ReminderSeconds:     0,
-		SoundID:             "chime",
-		ReminderSoundID:     "",
-		QuestionsSoundID:    "",
-		NextSoundID:         "",
-		DeviceID:            "default",
-		Volume:              0.85,
-		MuteConferenceSound:         false,
-		MuteConferenceReceive:       true,
-		ConferenceCameraEnabled:     false,
+		TalkMinutes:                10,
+		TalkSeconds:                0,
+		QuestionsMinutes:           5,
+		QuestionsSeconds:           0,
+		ReminderMinutes:            2,
+		ReminderSeconds:            0,
+		SoundID:                    "chime",
+		ReminderSoundID:            "",
+		QuestionsSoundID:           "",
+		NextSoundID:                "",
+		DeviceID:                   "default",
+		Volume:                     0.85,
+		MuteConferenceSound:        false,
+		MuteConferenceReceive:      true,
+		ConferenceCameraEnabled:    false,
 		SessionUseDefaultTalk:      true,
 		SessionUseDefaultQuestions: true,
+		TimerScalePercent:          DefaultTimerScalePercent,
+		WidgetPlacement:            WidgetPlacementTopRight,
+		WidgetFreeX:                0,
+		WidgetFreeY:                0,
 	}
 }
 
@@ -128,6 +155,8 @@ func KeepSession(input, stored Settings) Settings {
 	input.SessionQuestionsSeconds = stored.SessionQuestionsSeconds
 	input.SessionUseDefaultTalk = stored.SessionUseDefaultTalk
 	input.SessionUseDefaultQuestions = stored.SessionUseDefaultQuestions
+	input.WidgetFreeX = stored.WidgetFreeX
+	input.WidgetFreeY = stored.WidgetFreeY
 	return input
 }
 
@@ -200,6 +229,31 @@ func normalize(value, fallback Settings) Settings {
 	}
 	if !value.SessionUseDefaultQuestions && value.SessionQuestionsMinutes == 0 && value.SessionQuestionsSeconds == 0 {
 		value.SessionUseDefaultQuestions = true
+	}
+	if value.TimerScalePercent < MinTimerScalePercent {
+		if value.TimerScalePercent == 0 {
+			value.TimerScalePercent = fallback.TimerScalePercent
+			if value.TimerScalePercent == 0 {
+				value.TimerScalePercent = DefaultTimerScalePercent
+			}
+		} else {
+			value.TimerScalePercent = MinTimerScalePercent
+		}
+	}
+	if value.TimerScalePercent > MaxTimerScalePercent {
+		value.TimerScalePercent = MaxTimerScalePercent
+	}
+	switch value.WidgetPlacement {
+	case WidgetPlacementTopLeft, WidgetPlacementFree:
+	default:
+		if value.WidgetPlacement == "" {
+			value.WidgetPlacement = fallback.WidgetPlacement
+			if value.WidgetPlacement == "" {
+				value.WidgetPlacement = WidgetPlacementTopRight
+			}
+		} else {
+			value.WidgetPlacement = WidgetPlacementTopRight
+		}
 	}
 	return value
 }

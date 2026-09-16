@@ -30,6 +30,14 @@ export function EndSession() {
   return window['go']['main']['App']['EndSession']();
 }
 
+export function EnterWidgetMode() {
+  return window['go']['main']['App']['EnterWidgetMode']();
+}
+
+export function ExitWidgetMode() {
+  return window['go']['main']['App']['ExitWidgetMode']();
+}
+
 export function GetAppInfo() {
   return window['go']['main']['App']['GetAppInfo']();
 }
@@ -76,6 +84,10 @@ export function GoToQuestions() {
 
 export function ImportSound() {
   return window['go']['main']['App']['ImportSound']();
+}
+
+export function IsWidgetMode() {
+  return window['go']['main']['App']['IsWidgetMode']();
 }
 
 export function ListSessionTemplates() {

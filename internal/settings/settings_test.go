@@ -27,6 +27,12 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	if got.QuestionsSoundID != "" || got.NextSoundID != "" {
 		t.Fatalf("explicitly empty cue settings changed: %+v", got)
 	}
+	if got.TimerScalePercent != DefaultTimerScalePercent {
+		t.Fatalf("old settings did not receive timerScalePercent default: %+v", got)
+	}
+	if got.WidgetPlacement != WidgetPlacementTopRight {
+		t.Fatalf("old settings did not receive widgetPlacement default: %+v", got)
+	}
 }
 
 func TestConferenceCameraEnabledRoundTrip(t *testing.T) {
@@ -117,6 +123,8 @@ func TestKeepSessionPreservesTemplate(t *testing.T) {
 	stored.SessionTalkMinutes = 8
 	stored.SessionUseDefaultTalk = false
 	stored.SessionUseDefaultQuestions = true
+	stored.WidgetFreeX = 420
+	stored.WidgetFreeY = 64
 
 	input := Default()
 	input.TalkMinutes = 12
@@ -129,6 +137,9 @@ func TestKeepSessionPreservesTemplate(t *testing.T) {
 	}
 	if got.TalkMinutes != 12 {
 		t.Fatalf("non-session fields should stay: %+v", got)
+	}
+	if got.WidgetFreeX != 420 || got.WidgetFreeY != 64 {
+		t.Fatalf("saved free widget position should stay: %+v", got)
 	}
 }
 
@@ -156,5 +167,47 @@ func TestNormalizeInvalidReminder(t *testing.T) {
 	got := normalize(value, Default())
 	if got.ReminderMinutes != 2 || got.ReminderSeconds != 0 {
 		t.Fatalf("unexpected normalized reminder: %+v", got)
+	}
+}
+
+func TestTimerScaleNormalization(t *testing.T) {
+	value := Default()
+	value.TimerScalePercent = 200
+	got := normalize(value, Default())
+	if got.TimerScalePercent != MaxTimerScalePercent {
+		t.Fatalf("expected clamp to max, got %d", got.TimerScalePercent)
+	}
+
+	value.TimerScalePercent = 10
+	got = normalize(value, Default())
+	if got.TimerScalePercent != MinTimerScalePercent {
+		t.Fatalf("expected clamp to min, got %d", got.TimerScalePercent)
+	}
+}
+
+func TestWidgetPlacementRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.WidgetPlacement = WidgetPlacementTopLeft
+	input.WidgetFreeX = 120
+	input.WidgetFreeY = 80
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.WidgetPlacement != WidgetPlacementTopLeft || got.WidgetFreeX != 120 || got.WidgetFreeY != 80 {
+		t.Fatalf("widget placement not saved: %+v", got)
+	}
+}
+
+func TestNormalizeWidgetPlacement(t *testing.T) {
+	if NormalizeWidgetPlacement("invalid") != WidgetPlacementTopRight {
+		t.Fatal("invalid placement should default to topRight")
+	}
+	if NormalizeWidgetPlacement(WidgetPlacementFree) != WidgetPlacementFree {
+		t.Fatal("free placement should stay free")
 	}
 }

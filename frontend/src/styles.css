@@ -387,7 +387,7 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: var(--timer-stage-gap, 24px);
   padding: 76px 28px 28px;
   transition: margin-right 200ms ease;
 }
@@ -462,10 +462,10 @@ button {
   position: relative;
   display: grid;
   place-items: center;
-  width: min(56vh, 440px);
-  height: min(56vh, 440px);
-  min-width: 292px;
-  min-height: 292px;
+  width: min(var(--timer-ring-viewport-size, 56vh), var(--timer-ring-size, 440px));
+  height: min(var(--timer-ring-viewport-size, 56vh), var(--timer-ring-size, 440px));
+  min-width: var(--timer-ring-min-size, 292px);
+  min-height: var(--timer-ring-min-size, 292px);
   color: #7d93ff;
   filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.28));
 }
@@ -528,7 +528,7 @@ button {
 
 .timer-value {
   color: #f2f4fb;
-  font-size: clamp(4rem, 10vw, 6.4rem);
+  font-size: clamp(4rem, var(--timer-digit-fluid-size, 10vw), var(--timer-digit-size, 6.4rem));
   font-weight: 300;
   line-height: 1;
   letter-spacing: -0.055em;
@@ -553,8 +553,18 @@ button {
 .controls {
   display: flex;
   align-items: center;
-  gap: 19px;
+  gap: var(--timer-control-gap, 19px);
   padding: 6px;
+}
+
+.controls .icon-button {
+  width: var(--timer-control-size, 54px);
+  height: var(--timer-control-size, 54px);
+}
+
+.controls .icon-button svg {
+  width: var(--timer-control-icon-size, 23px);
+  height: var(--timer-control-icon-size, 23px);
 }
 
 .icon-button {
@@ -1668,19 +1678,108 @@ input[type="range"] {
   50% { opacity: 0.4; transform: scale(0.82); }
 }
 
-@media (max-height: 720px) {
+.digit-size-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.digit-size-value {
+  min-width: 52px;
+  color: #7e879d;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.app-shell.widget-mode {
+  min-height: 0;
+  height: 100vh;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.widget-chrome {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(12, 15, 22, 0.94);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+}
+
+.widget-chrome.widget-draggable {
+  cursor: grab;
+}
+
+.widget-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.widget-phase {
+  color: #788198;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.widget-timer {
+  color: #f2f4fb;
+  font-size: 2.8rem;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.widget-mode.status-running .widget-timer {
+  color: #9db0ff;
+}
+
+.widget-mode.status-paused .widget-timer {
+  color: #f3c868;
+}
+
+.widget-mode.status-overtime .widget-timer,
+.widget-mode.status-alert .widget-timer {
+  color: #ff6576;
+}
+
+.widget-restore {
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+@media (max-height: 620px) {
   .timer-stage {
     gap: 14px;
     padding-top: 64px;
   }
 
   .timer-ring {
-    width: min(48vh, 350px);
-    height: min(48vh, 350px);
+    width: min(44vh, var(--timer-ring-size, 350px));
+    height: min(44vh, var(--timer-ring-size, 350px));
+    min-width: 250px;
+    min-height: 250px;
   }
 
   .timer-value {
-    font-size: clamp(3.2rem, 9vw, 5rem);
+    font-size: clamp(3.2rem, var(--timer-digit-fluid-size, 9vw), var(--timer-digit-size, 5rem));
   }
 
   .icon-button {
@@ -1714,7 +1813,7 @@ input[type="range"] {
   }
 
   .timer-value {
-    font-size: 3.7rem;
+    font-size: var(--timer-digit-size, 3.7rem);
   }
 
   .controls {

@@ -8,6 +8,8 @@ import {
   DismissAlert,
   DeleteSessionTemplate,
   DisconnectConference,
+  EnterWidgetMode,
+  ExitWidgetMode,
   GetAppInfo,
   GetAudioDevices,
   GetConferenceDiagnostics,
@@ -19,6 +21,7 @@ import {
   GetState,
   GoToQuestions,
   ImportSound,
+  IsWidgetMode,
   ListSessionTemplates,
   NextSpeaker,
   Pause,
@@ -140,6 +143,11 @@ function formatOvertime(totalSeconds: number): string {
 }
 
 const MAX_SPEAKERS = 50;
+const MIN_TIMER_SCALE = 80;
+const MAX_TIMER_SCALE = 140;
+const DEFAULT_TIMER_SCALE = 115;
+
+type WidgetPlacement = 'topRight' | 'topLeft' | 'free';
 
 const initialSessionState: SessionState = {
   active: false,
@@ -312,6 +320,9 @@ function App() {
     url: '',
     urlLabel: '',
   });
+  const [timerScalePercent, setTimerScalePercent] = useState(DEFAULT_TIMER_SCALE);
+  const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
+  const [widgetMode, setWidgetMode] = useState(false);
 
   const settingsLocked = snapshot.isRunning;
   const settingsLockMessage = useMemo(() => {
@@ -369,6 +380,8 @@ function App() {
       muteConferenceSound: next?.muteConferenceSound ?? muteConferenceSound,
       muteConferenceReceive: next?.muteConferenceReceive ?? muteConferenceReceive,
       conferenceCameraEnabled: next?.conferenceCameraEnabled ?? conferenceCameraEnabled,
+      timerScalePercent: next?.timerScalePercent ?? timerScalePercent,
+      widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
     });
 
     setSaving(true);
@@ -378,6 +391,8 @@ function App() {
       setMuteConferenceSound(saved.muteConferenceSound ?? false);
       setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
       setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? false);
+      setTimerScalePercent(saved.timerScalePercent || DEFAULT_TIMER_SCALE);
+      setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setError('');
@@ -402,6 +417,8 @@ function App() {
     muteConferenceSound,
     muteConferenceReceive,
     conferenceCameraEnabled,
+    timerScalePercent,
+    widgetPlacement,
   ]);
 
   useEffect(() => {
@@ -442,6 +459,9 @@ function App() {
       setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
       setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
       setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? false);
+      setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
+      setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
+      setWidgetMode(await IsWidgetMode());
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
       setConferenceState(initialConference as ConferenceState);
@@ -486,6 +506,13 @@ function App() {
   useEffect(() => {
     const unsubscribe = EventsOn('session:state', (state: SessionState) => {
       setSessionState(state);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = EventsOn('window:widget', (enabled: boolean) => {
+      setWidgetMode(Boolean(enabled));
     });
     return () => unsubscribe();
   }, []);
@@ -849,6 +876,31 @@ function App() {
     }
   };
 
+  const handleEnterWidget = async () => {
+    try {
+      setSettingsOpen(false);
+      setSessionPanelOpen(false);
+      setConnectionPromptOpen(false);
+      setAboutOpen(false);
+      setTemplateModalOpen(false);
+      await EnterWidgetMode();
+      setWidgetMode(true);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const handleExitWidget = async () => {
+    try {
+      await ExitWidgetMode();
+      setWidgetMode(false);
+      setError('');
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
   const handleConferenceDiagnostics = async () => {
     setConferenceBusy(true);
     try {
@@ -876,7 +928,22 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash') => {
+  const timerScaleStyle = useMemo(() => {
+    const scale = timerScalePercent / 100;
+    return {
+      '--timer-ring-size': `${440 * scale}px`,
+      '--timer-ring-viewport-size': `${56 * scale}vh`,
+      '--timer-ring-min-size': `${292 * scale}px`,
+      '--timer-digit-size': `${102.4 * scale}px`,
+      '--timer-digit-fluid-size': `${10 * scale}vw`,
+      '--timer-control-size': `${54 * scale}px`,
+      '--timer-control-icon-size': `${23 * scale}px`,
+      '--timer-control-gap': `${19 * scale}px`,
+      '--timer-stage-gap': `${24 * scale}px`,
+    } as React.CSSProperties;
+  }, [timerScalePercent]);
+
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'expand') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -892,6 +959,8 @@ function App() {
       browserHide: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><path d="M8 15h8" /></>,
       queue: <><path d="M8 7h11" /><path d="M8 12h11" /><path d="M8 17h11" /><circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" /></>,
       trash: <><path d="M5 7h14" /><path d="M9.5 7V5.5h5V7" /><path d="M8 7l.7 11.5h6.6L16 7" /></>,
+      widget: <><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" /><rect x="13" y="6.5" width="5.5" height="4.5" rx="1" /></>,
+      expand: <><path d="M8 4.5h3.5V8" /><path d="M12.5 4.5 8 9" /><path d="M16 19.5h-3.5V16" /><path d="M11.5 19.5 16 15" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -922,8 +991,35 @@ function App() {
     </>
   );
 
+  if (widgetMode) {
+    return (
+      <div className={`app-shell widget-mode ${statusClass}`}>
+        <div
+          className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
+          style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
+        >
+          <div className="widget-body">
+            <span className="widget-phase">{phaseLabels[snapshot.phase]}</span>
+            <span className="widget-timer">{displayTime}</span>
+          </div>
+          <button
+            className="icon-button quiet widget-restore"
+            onClick={handleExitWidget}
+            aria-label="Развернуть таймер"
+            title="Развернуть"
+          >
+            {icon('expand')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`app-shell${sessionPanelOpen ? ' has-session-panel' : ''}`}>
+    <div
+      className={`app-shell${sessionPanelOpen ? ' has-session-panel' : ''}`}
+      style={timerScaleStyle}
+    >
       <header className="topbar">
         <div className="topbar-left">
           {conferenceActive && (
@@ -946,6 +1042,14 @@ function App() {
             onClick={() => setSessionPanelOpen((open) => !open)}
           >
             {icon('queue')}
+          </button>
+          <button
+            className="icon-button quiet"
+            aria-label="Свернуть в виджет"
+            title="Свернуть в виджет"
+            onClick={handleEnterWidget}
+          >
+            {icon('widget')}
           </button>
           <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
             {icon('settings')}
@@ -1294,6 +1398,44 @@ function App() {
             </div>
 
             {settingsLocked && <SettingsLockBanner message={settingsLockMessage} />}
+
+            <div className="settings-section">
+              <h3>Интерфейс</h3>
+              <label>
+                Размер таймера
+                <div className="digit-size-row">
+                  <input
+                    type="range"
+                    min={MIN_TIMER_SCALE}
+                    max={MAX_TIMER_SCALE}
+                    step={5}
+                    value={timerScalePercent}
+                    disabled={settingsLocked}
+                    onChange={(event) => setTimerScalePercent(Number(event.target.value))}
+                    onMouseUp={() => persistSettings()}
+                    onTouchEnd={() => persistSettings()}
+                  />
+                  <span className="digit-size-value">{timerScalePercent}%</span>
+                </div>
+              </label>
+              <label>
+                Позиция виджета
+                <select
+                  value={widgetPlacement}
+                  disabled={settingsLocked}
+                  onChange={async (event) => {
+                    const next = event.target.value as WidgetPlacement;
+                    setWidgetPlacement(next);
+                    await persistSettings({ widgetPlacement: next });
+                  }}
+                >
+                  <option value="topRight">Правый верхний угол</option>
+                  <option value="topLeft">Левый верхний угол</option>
+                  <option value="free">Свободно</option>
+                </select>
+              </label>
+              <p className="settings-hint">Виджет всегда поверх остальных окон. В свободном режиме его можно перетаскивать за фон.</p>
+            </div>
 
             <div className="settings-section">
               <h3>Длительность</h3>

@@ -22,6 +22,10 @@ export function DismissAlert():Promise<void>;
 
 export function EndSession():Promise<session.State>;
 
+export function EnterWidgetMode():Promise<void>;
+
+export function ExitWidgetMode():Promise<void>;
+
 export function GetAppInfo():Promise<buildinfo.Info>;
 
 export function GetAudioDevices():Promise<Array<audio.Device>>;
@@ -45,6 +49,8 @@ export function GetState():Promise<timer.Snapshot>;
 export function GoToQuestions():Promise<void>;
 
 export function ImportSound():Promise<audio.Sound>;
+
+export function IsWidgetMode():Promise<boolean>;
 
 export function ListSessionTemplates():Promise<Array<templates.Entry>>;
 

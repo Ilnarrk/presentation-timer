@@ -22,15 +22,20 @@ import (
 type App struct {
 	ctx context.Context
 
-	mu         sync.Mutex
-	settings   *settings.Store
-	templates  *templates.Store
-	catalog    *audio.Catalog
-	audio      *audio.Player
-	engine     *timer.Engine
-	session    *session.Tracker
-	conference *conference.Controller
-	projectFS  fs.FS
+	mu           sync.Mutex
+	settings     *settings.Store
+	templates    *templates.Store
+	catalog      *audio.Catalog
+	audio        *audio.Player
+	engine       *timer.Engine
+	session      *session.Tracker
+	conference   *conference.Controller
+	projectFS    fs.FS
+	windowTitle  string
+	widgetMode   bool
+	normalBounds windowBounds
+	normalMinW   int
+	normalMinH   int
 }
 
 func NewApp(projectSounds ...fs.FS) *App {
@@ -43,6 +48,7 @@ func NewApp(projectSounds ...fs.FS) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.windowTitle = buildinfo.Get().Name
 
 	catalog, err := audio.NewCatalog(a.projectFS)
 	if err != nil {
@@ -81,6 +87,13 @@ func (a *App) startup(ctx context.Context) {
 		runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	})
 	conference.SetMainWindowBoundsProvider(func() (int, int, int, int) {
+		a.mu.Lock()
+		widgetMode := a.widgetMode
+		bounds := a.normalBounds
+		a.mu.Unlock()
+		if widgetMode && bounds.w > 0 && bounds.h > 0 {
+			return bounds.x, bounds.y, bounds.w, bounds.h
+		}
 		x, y := runtime.WindowGetPosition(a.ctx)
 		w, h := runtime.WindowGetSize(a.ctx)
 		return x, y, w, h

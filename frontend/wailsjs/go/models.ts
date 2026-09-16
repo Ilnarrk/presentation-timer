@@ -224,6 +224,10 @@ export namespace settings {
 	    sessionQuestionsSeconds: number;
 	    sessionUseDefaultTalk: boolean;
 	    sessionUseDefaultQuestions: boolean;
+	    timerScalePercent: number;
+	    widgetPlacement: string;
+	    widgetFreeX: number;
+	    widgetFreeY: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -256,6 +260,10 @@ export namespace settings {
 	        this.sessionQuestionsSeconds = source["sessionQuestionsSeconds"];
 	        this.sessionUseDefaultTalk = source["sessionUseDefaultTalk"];
 	        this.sessionUseDefaultQuestions = source["sessionUseDefaultQuestions"];
+	        this.timerScalePercent = source["timerScalePercent"];
+	        this.widgetPlacement = source["widgetPlacement"];
+	        this.widgetFreeX = source["widgetFreeX"];
+	        this.widgetFreeY = source["widgetFreeY"];
 	    }
 	}
 
