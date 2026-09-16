@@ -87,6 +87,12 @@ jobs:
       - name: Синхронизация метаданных приложения
         run: go run build/sync_app_config.go
 
+      - name: Запомнить имя portable exe
+        shell: pwsh
+        run: |
+          $version = if ($env:APP_VERSION) { $env:APP_VERSION } else { (Get-Content build/app.json -Raw | ConvertFrom-Json).version }
+          "PORTABLE_EXE=build/bin/presentation-timer-$version.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Сборка приложения
         run: wails build --nsis
 
@@ -117,7 +123,7 @@ jobs:
         shell: pwsh
         run: |
           $installerDir = Join-Path $pwd "build/windows/installer"
-          $binary = (Resolve-Path "build/bin/presentation-timer.exe").Path
+          $binary = (Resolve-Path $env:PORTABLE_EXE).Path
           Push-Location $installerDir
           try {
             makensis -DARG_WAILS_AMD64_BINARY="$binary" project.nsi
@@ -154,16 +160,16 @@ jobs:
       - name: Проверка артефактов сборки
         shell: pwsh
         run: |
-          $exe = "build/bin/presentation-timer.exe"
+          $exe = $env:PORTABLE_EXE
           if (-not (Test-Path $exe)) {
-            Write-Error "presentation-timer.exe not found in build/bin"
+            Write-Error "$exe not found in build/bin"
             Get-ChildItem -Recurse build/bin -ErrorAction SilentlyContinue
             exit 1
           }
           $minBytes = 8MB
           $size = (Get-Item $exe).Length
           if ($size -lt $minBytes) {
-            Write-Error "presentation-timer.exe is too small ($size bytes) — frontend may be missing"
+            Write-Error "$(Split-Path -Leaf $exe) is too small ($size bytes) — frontend may be missing"
             exit 1
           }
           if (-not (Test-Path build/bin/presentation-timer-*-installer.exe)) {
@@ -183,7 +189,7 @@ jobs:
             "## Файлы",
             "",
             "- ``presentation-timer-*-installer.exe`` — основной способ установки: копирует приложение и сам импортирует публичный сертификат (нужны права администратора).",
-            "- ``presentation-timer.exe`` — portable-сборка без установки сертификата.",
+            "- ``presentation-timer-<version>.exe`` — portable-сборка без установки сертификата.",
             "- ``codesign.cer`` — тот же публичный сертификат, если нужен ручной импорт для portable.",
             "",
             "## SHA256",
@@ -202,7 +208,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/bin/presentation-timer.exe
+            build/bin/presentation-timer-[0-9]*.exe
             build/bin/presentation-timer-*-installer.exe
             build/bin/codesign.cer
           body_path: build/bin/release-notes.md

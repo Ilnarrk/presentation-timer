@@ -106,16 +106,24 @@ function Get-SignTargets([string]$Dir, [bool]$OnlyExe, [bool]$OnlyInstaller) {
     $targets = [System.Collections.Generic.List[string]]::new()
 
     if (-not $OnlyInstaller) {
-        $primary = Join-Path $Dir "presentation-timer.exe"
-        if (Test-Path -LiteralPath $primary) {
-            $targets.Add((Resolve-Path -LiteralPath $primary).Path)
-        } elseif (-not $OnlyExe) {
-            Get-ChildItem -Path $Dir -Filter "presentation-timer*.exe" -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -notmatch '-installer\.exe$' } |
-                ForEach-Object { $targets.Add($_.FullName) }
-            $wailsapp = Join-Path $Dir "wailsapp.exe"
-            if ((Test-Path -LiteralPath $wailsapp) -and $targets.Count -eq 0) {
-                $targets.Add((Resolve-Path -LiteralPath $wailsapp).Path)
+        $portable = Get-ChildItem -Path $Dir -Filter "presentation-timer-*.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch '-installer\.exe$' -and $_.Name -match '-\d+\.\d+' } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+        if ($portable) {
+            $targets.Add($portable.FullName)
+        } else {
+            $primary = Join-Path $Dir "presentation-timer.exe"
+            if (Test-Path -LiteralPath $primary) {
+                $targets.Add((Resolve-Path -LiteralPath $primary).Path)
+            } elseif (-not $OnlyExe) {
+                Get-ChildItem -Path $Dir -Filter "presentation-timer*.exe" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -notmatch '-installer\.exe$' } |
+                    ForEach-Object { $targets.Add($_.FullName) }
+                $wailsapp = Join-Path $Dir "wailsapp.exe"
+                if ((Test-Path -LiteralPath $wailsapp) -and $targets.Count -eq 0) {
+                    $targets.Add((Resolve-Path -LiteralPath $wailsapp).Path)
+                }
             }
         }
     }
@@ -136,7 +144,7 @@ if ($targets.Count -eq 0) {
     $hint = @(
         "No $mode to sign in $BinDir.",
         "Run: wails build (and makensis for installer).",
-        "Expected presentation-timer.exe (set `"name`": `"presentation-timer`" in wails.json)."
+        "Expected presentation-timer-<version>.exe (run sync_app_config / wails build with preBuildHooks)."
     ) -join "`n"
     throw $hint
 }

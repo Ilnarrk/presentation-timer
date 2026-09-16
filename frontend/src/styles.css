@@ -90,7 +90,7 @@ select {
 
 .timer-value {
   font-size: clamp(3.5rem, 10vw, 6.5rem);
-  font-weight: 700;
+  font-weight: 400;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
 }
@@ -1858,18 +1858,23 @@ body {
   width: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .timer-ring {
   --timer-size: min(var(--timer-size-width, 78.2cqw), var(--timer-size-height, 78.2cqh), 98cqw, 98cqh);
   container-type: inline-size;
-  width: min(68vw, calc(100vh - 180px));
-  height: min(68vw, calc(100vh - 180px));
+  position: relative;
+  display: grid;
+  place-items: center;
   width: var(--timer-size);
   height: var(--timer-size);
+  max-width: 100%;
+  max-height: 100%;
   min-width: 0;
   min-height: 0;
   aspect-ratio: 1;
+  overflow: hidden;
   filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.28));
 }
 
@@ -1902,36 +1907,44 @@ body {
 
 .timer-content {
   gap: 0;
-  width: 78%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 76%;
+  max-width: 100%;
+  max-height: 74%;
+  overflow: hidden;
 }
 
 .phase-name {
-  margin-bottom: 5cqi;
+  margin-bottom: 1.2cqi;
   color: var(--text-secondary);
-  font-size: clamp(0.7rem, 3.2cqi, 1.15rem);
+  font-size: clamp(0.7rem, 3.2cqi, 1.25rem);
   font-weight: 600;
   letter-spacing: 0.14em;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .timer-value {
   width: 100%;
+  max-width: 100%;
   color: var(--text-primary);
-  font-size: clamp(3.25rem, 25cqi, 10rem);
-  font-weight: 350;
-  letter-spacing: -0.045em;
-  text-align: center;
-}
-
-[class*="timer-font-"]:not(.timer-font-system) .timer-value,
-[class*="timer-font-"]:not(.timer-font-system) .widget-timer {
-  font-family: var(--timer-digit-font-family, "Digital Normal", "Courier New", monospace);
+  font-size: var(--timer-value-fit-size, clamp(3.25rem, 25cqi, 10rem));
   font-weight: 600;
-  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  line-height: 0.92;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .timer-display-digital .timer-ring {
   width: min(96cqw, 100%);
-  height: auto;
+  height: 100%;
+  max-height: 100%;
   min-width: 0;
   min-height: 0;
   aspect-ratio: auto;
@@ -1943,12 +1956,14 @@ body {
 }
 
 .timer-display-digital .timer-content {
-  width: 100%;
-  padding: 3cqh 0;
+  width: min(96cqw, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  padding: 2cqh 0;
 }
 
 .timer-display-digital .timer-value {
-  font-size: clamp(5rem, 46cqi, 18rem);
+  font-size: var(--timer-value-fit-size, clamp(5rem, 46cqi, 18rem));
   line-height: 0.86;
 }
 
@@ -1956,22 +1971,26 @@ body {
   display: grid;
   grid-template-columns: 1fr 1px 1fr;
   align-items: center;
-  gap: 6cqi;
-  margin-top: 5cqi;
+  gap: 2.4cqi;
+  margin-top: 1.4cqi;
   color: var(--text-muted);
-  font-size: clamp(0.64rem, 2.8cqi, 0.96rem);
+  font-size: clamp(0.64rem, 2.8cqi, 1rem);
   letter-spacing: 0.14em;
+  white-space: nowrap;
 }
 
 .timer-units i {
   width: 1px;
-  height: 6cqi;
+  height: 2.2cqi;
   background: rgba(154, 168, 192, 0.28);
 }
 
 .timer-caption {
-  margin-top: 4cqi;
-  font-size: clamp(0.68rem, 2.7cqi, 0.9rem);
+  margin-top: 1.2cqi;
+  font-size: clamp(0.68rem, 2.5cqi, 0.95rem);
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .controls {
@@ -2098,14 +2117,24 @@ body {
 .widget-mode.status-overtime .widget-timer,
 .widget-mode.status-alert .widget-timer {
   color: var(--widget-state);
-  font-size: var(--widget-timer-size);
+  font-size: var(--widget-timer-fit-size, var(--widget-timer-size));
   width: 100%;
   max-width: 100%;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: -0.045em;
   white-space: nowrap;
   text-align: center;
+  overflow: hidden;
+}
+
+[class*="timer-font-"]:not(.timer-font-system) .timer-value,
+[class*="timer-font-"]:not(.timer-font-system) .widget-timer {
+  font-family: var(--timer-digit-font-family, "Digital Normal", "Courier New", monospace);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
 
 .widget-primary {

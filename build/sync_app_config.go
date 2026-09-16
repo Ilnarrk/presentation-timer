@@ -30,17 +30,23 @@ func main() {
 }
 
 // findProjectRoot locates the repo root whether the hook runs from the project
-// root (wails build/dev) or from build/ (manual go run).
+// root, build/, or build/bin/ (wails preBuildHooks cwd).
 func findProjectRoot() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	for _, candidate := range []string{wd, filepath.Join(wd, "..")} {
-		appPath := filepath.Join(candidate, "build", "app.json")
+	dir := wd
+	for {
+		appPath := filepath.Join(dir, "build", "app.json")
 		if _, err := os.Stat(appPath); err == nil {
-			return filepath.Clean(candidate), nil
+			return filepath.Clean(dir), nil
 		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
 	}
 	return "", fmt.Errorf("build/app.json not found from %s", wd)
 }
@@ -96,6 +102,14 @@ func syncWailsMetadata(root string, app appConfig) error {
 	}
 	if app.Version != "" {
 		info["productVersion"] = app.Version
+	}
+
+	projectName, _ := wails["name"].(string)
+	if projectName == "" {
+		projectName = "presentation-timer"
+	}
+	if app.Version != "" {
+		wails["outputfilename"] = fmt.Sprintf("%s-%s.exe", projectName, app.Version)
 	}
 
 	out, err := json.MarshalIndent(wails, "", "  ")

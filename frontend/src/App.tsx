@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import './styles.css';
+import { useTimerDisplayFit } from './useTimerDisplayFit';
+import { useWidgetTimerFit } from './useWidgetTimerFit';
 import {
   ConfirmConferenceJoined,
   ConnectConference,
@@ -1001,6 +1003,29 @@ function App() {
       '--timer-size-height': `${scaledSize}cqh`,
     } as React.CSSProperties;
   }, [timerScalePercent]);
+  const timerHasCaption = snapshot.phase.includes('Overtime');
+  const timerHasOvertime = snapshot.phase.includes('Overtime');
+  const {
+    viewportRef: timerViewportRef,
+    ringRef: timerRingRef,
+    contentRef: timerContentRef,
+    valueRef: timerValueRef,
+  } = useTimerDisplayFit({
+    active: !widgetMode,
+    mode: timerDisplayMode,
+    scalePercent: timerScalePercent,
+    fontId: timerFont,
+    hasCaption: timerHasCaption,
+    hasOvertime: timerHasOvertime,
+  });
+  const { bodyRef: widgetBodyRef, timerRef: widgetTimerRef } = useWidgetTimerFit({
+    fontId: timerFont,
+    active: widgetMode,
+  });
+  const { bodyRef: widgetPreviewBodyRef, timerRef: widgetPreviewTimerRef } = useWidgetTimerFit({
+    fontId: timerFont,
+    active: settingsOpen && settingsTab === 'interface',
+  });
 
   const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore') => {
     const paths = {
@@ -1081,8 +1106,8 @@ function App() {
               {icon('questions')}
             </button>
           </div>
-          <div className="widget-body">
-            <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
+          <div className="widget-body" ref={widgetBodyRef}>
+            <span className="widget-timer" ref={widgetTimerRef} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
           </div>
           <button
             className="icon-button quiet widget-restore"
@@ -1140,8 +1165,12 @@ function App() {
       </header>
 
       <main className="timer-stage">
-        <div className="timer-viewport">
-          <section className={`timer-ring ${statusClass}`} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>
+        <div className="timer-viewport" ref={timerViewportRef}>
+          <section
+            ref={timerRingRef}
+            className={`timer-ring ${statusClass}`}
+            aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}
+          >
             <svg className="progress-ring" viewBox="0 0 320 320" aria-hidden="true">
               <circle className="ring-track" cx="160" cy="160" r="136" />
               <circle
@@ -1153,9 +1182,9 @@ function App() {
                 strokeDashoffset={ringLength * (1 - progress)}
               />
             </svg>
-            <div className="timer-content">
+            <div className="timer-content" ref={timerContentRef}>
               <span className="phase-name">{phaseLabels[snapshot.phase]}</span>
-              <span className="timer-value">{displayTime}</span>
+              <span className="timer-value" ref={timerValueRef}>{displayTime}</span>
               <span className="timer-units"><span>мин</span><i aria-hidden="true" /><span>сек</span></span>
               {snapshot.phase.includes('Overtime') && (
                 <span className="timer-caption">Сигнал через {formatClock(snapshot.nextReminderIn)}</span>
@@ -1550,7 +1579,7 @@ function App() {
                     ['widgetColorIdle', 'Ожидание', '#8ec5ff'],
                     ['widgetColorRunning', 'Доклад', '#69e0b0'],
                     ['widgetColorPaused', 'Пауза', '#ffd271'],
-                    ['widgetColorOvertime', 'Перерасход', '#ff8794'],
+                    ['widgetColorOvertime', 'Просрочка', '#ff8794'],
                   ] as const).map(([key, label, fallback]) => (
                     <label
                       key={key}
@@ -1585,7 +1614,7 @@ function App() {
                       <span className="widget-secondary widget-secondary-compact preview-control">{icon('next')}</span>
                       <span className="widget-secondary widget-secondary-compact preview-control">{icon('questions')}</span>
                     </div>
-                    <div className="widget-body"><span className="widget-timer">{displayTime}</span></div>
+                    <div className="widget-body" ref={widgetPreviewBodyRef}><span className="widget-timer" ref={widgetPreviewTimerRef}>{displayTime}</span></div>
                     <span className="widget-restore preview-restore" aria-hidden="true">{icon('restore')}</span>
                   </div>
                 </div>

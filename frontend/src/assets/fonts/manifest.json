@@ -1,9 +1,51 @@
 [
   {
+    "id": "blue-ridge",
+    "label": "Blue Ridge",
+    "family": "BlueRidge",
+    "file": "BlueRidge-xREgK.otf",
+    "format": "opentype"
+  },
+  {
     "id": "digital",
     "label": "Digital Normal",
     "family": "Digital Normal",
     "file": "DigitalNormal.otf",
     "format": "opentype"
+  },
+  {
+    "id": "flames",
+    "label": "Flames",
+    "family": "Flames",
+    "file": "Flames-lxmrZ.ttf",
+    "format": "truetype"
+  },
+  {
+    "id": "monilea-unique-chic",
+    "label": "Monilea Unique Chic",
+    "family": "MonileaUniqueChic",
+    "file": "MonileaUniqueChic-3lp58.otf",
+    "format": "opentype"
+  },
+  {
+    "id": "rosgra",
+    "label": "Rosgra Regular",
+    "family": "Rosgra",
+    "file": "RosgraRegular-ARVxL.ttf",
+    "format": "truetype"
+  },
+  {
+    "id": "torq",
+    "label": "Torq",
+    "family": "Torq",
+    "file": "Torq-vnWA7.ttf",
+    "format": "truetype"
+  },
+  {
+    "id": "nunito",
+    "label": "Nunito",
+    "family": "Nunito",
+    "file": "nunito-v16-latin-regular.woff2",
+    "format": "woff2"
   }
 ]

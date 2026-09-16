@@ -7,5 +7,9 @@
     "productName": "Таймер докладов",
     "productVersion": "0.2.4"
   },
-  "name": "presentation-timer"
+  "name": "presentation-timer",
+  "outputfilename": "presentation-timer-0.2.4.exe",
+  "preBuildHooks": {
+    "*/*": "go run ../sync_app_config.go"
+  }
 }

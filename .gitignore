@@ -22,6 +22,7 @@ sounds/
 *.out
 bin/
 dist/
+frontend/src/assets/fonts/
 
 # Code signing private key (never commit)
 build/windows/codesign.pfx

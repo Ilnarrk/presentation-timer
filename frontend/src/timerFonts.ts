@@ -68,7 +68,7 @@ export function ensureTimerFontsLoaded(): void {
         console.warn(`Timer font file not found in build: ${entry.file}`);
         return '';
       }
-      return `@font-face{font-family:"${entry.family}";src:url("${url}") format("${entry.format}");font-display:swap;}`;
+      return `@font-face{font-family:"${entry.family}";src:url("${url}") format("${entry.format}");font-weight:400;font-style:normal;font-display:swap;}`;
     })
     .filter(Boolean)
     .join('\n');
