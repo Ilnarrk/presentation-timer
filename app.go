@@ -48,7 +48,8 @@ func NewApp(projectSounds ...fs.FS) *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.windowTitle = buildinfo.Get().Name
+	appInfo := buildinfo.Get()
+	a.windowTitle = fmt.Sprintf("%s v%s", appInfo.Name, appInfo.Version)
 
 	catalog, err := audio.NewCatalog(a.projectFS)
 	if err != nil {

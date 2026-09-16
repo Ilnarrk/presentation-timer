@@ -1845,26 +1845,6 @@ body {
   gap: 8px;
 }
 
-.app-identity {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-right: 4px;
-  white-space: nowrap;
-}
-
-.app-name {
-  color: var(--text-primary);
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.header-version {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  font-variant-numeric: tabular-nums;
-}
-
 .widget-mode-toggle {
   border-color: rgba(59, 156, 255, 0.24);
   color: #9dc8ff;
@@ -2009,32 +1989,37 @@ body {
 
 .app-shell.widget-mode,
 .widget-preview {
-  --widget-state: #4f9fff;
+  --widget-state: #8ec5ff;
   --widget-surface: rgba(8, 15, 28, 0.97);
   --widget-text: #f8fbff;
   --widget-muted: #9aabc4;
-  --widget-control-size: clamp(44px, min(13cqw, 46cqh), 72px);
-  --widget-timer-size: clamp(52px, min(19cqw, 62cqh), 96px);
-  --widget-restore-size: clamp(30px, 9cqh, 38px);
+  --widget-control-size: clamp(42px, min(14cqw, 48cqh), 96px);
+  --widget-timer-size: clamp(50px, min(22cqw, 68cqh), 168px);
+  --widget-restore-size: clamp(28px, min(8cqw, 22cqh), 48px);
   --widget-radius: clamp(16px, 4cqh, 28px);
   container-type: size;
   color: var(--widget-text);
 }
 
-.status-running {
-  --widget-state: #35d6a0;
+.app-shell.widget-mode.status-running,
+.widget-preview.status-running {
+  --widget-state: #69e0b0;
 }
 
-.status-paused {
-  --widget-state: #f2bd55;
+.app-shell.widget-mode.status-paused,
+.widget-preview.status-paused {
+  --widget-state: #ffd271;
 }
 
-.status-overtime,
-.status-alert {
-  --widget-state: #ff6475;
+.app-shell.widget-mode.status-overtime,
+.app-shell.widget-mode.status-alert,
+.widget-preview.status-overtime,
+.widget-preview.status-alert {
+  --widget-state: #ff8794;
 }
 
-.widget-shape-rectangular {
+.app-shell.widget-mode.widget-shape-rectangular,
+.widget-preview.widget-shape-rectangular {
   --widget-radius: 0px;
 }
 
@@ -2067,7 +2052,7 @@ body {
 .widget-mode.status-paused .widget-timer,
 .widget-mode.status-overtime .widget-timer,
 .widget-mode.status-alert .widget-timer {
-  color: var(--widget-text);
+  color: var(--widget-state);
   font-size: var(--widget-timer-size);
   font-weight: 350;
   line-height: 0.94;
@@ -2075,24 +2060,29 @@ body {
 }
 
 .widget-primary {
+  --widget-action: var(--widget-state);
   --wails-draggable: no-drag;
   display: grid;
   place-items: center;
   width: var(--widget-control-size);
   height: var(--widget-control-size);
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--widget-state) 88%, white 12%);
+  border: 1px solid color-mix(in srgb, var(--widget-action) 88%, white 12%);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--widget-state) 22%, transparent);
-  color: color-mix(in srgb, var(--widget-state) 62%, white 38%);
+  background: color-mix(in srgb, var(--widget-action) 22%, transparent);
+  color: color-mix(in srgb, var(--widget-action) 62%, white 38%);
   cursor: pointer;
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--widget-state) 18%, transparent);
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--widget-action) 18%, transparent);
   transition: transform 150ms ease, background 150ms ease;
+}
+
+.widget-primary.widget-action-play {
+  --widget-action: #35d6a0;
 }
 
 .widget-primary:hover {
   transform: scale(1.04);
-  background: color-mix(in srgb, var(--widget-state) 34%, transparent);
+  background: color-mix(in srgb, var(--widget-action) 34%, transparent);
 }
 
 .widget-primary svg,
@@ -2113,7 +2103,8 @@ body {
   stroke: none;
 }
 
-.widget-restore {
+.widget-restore,
+.icon-button.quiet.widget-restore {
   --wails-draggable: no-drag;
   position: absolute;
   right: clamp(7px, 2.5cqw, 12px);
@@ -2121,11 +2112,20 @@ body {
   width: var(--widget-restore-size);
   height: var(--widget-restore-size);
   border-radius: 9px;
-  color: var(--widget-muted);
-  opacity: 0.78;
+  border-color: color-mix(in srgb, var(--widget-state) 35%, transparent);
+  background: color-mix(in srgb, var(--widget-state) 10%, transparent);
+  color: var(--widget-state);
+  opacity: 0.9;
 }
 
-.widget-restore svg {
+.icon-button.quiet.widget-restore:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--widget-state) 58%, transparent);
+  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
+  color: var(--widget-state);
+}
+
+.widget-restore svg,
+.icon-button.quiet.widget-restore svg {
   width: 52%;
   height: 52%;
 }
@@ -2137,18 +2137,37 @@ body {
   box-shadow: var(--shadow-widget), 0 0 18px rgba(255, 75, 94, 0.14);
 }
 
-.widget-theme-light {
+.app-shell.widget-mode.widget-theme-light,
+.widget-preview.widget-theme-light {
+  --widget-state: #185da8;
   --widget-surface: rgba(247, 250, 255, 0.98);
   --widget-text: #101827;
   --widget-muted: #42536d;
 }
 
-.widget-theme-light .widget-restore {
-  border-color: rgba(24, 48, 82, 0.18);
-  background: rgba(29, 64, 111, 0.08);
+.app-shell.widget-mode.widget-theme-light.status-running,
+.widget-preview.widget-theme-light.status-running {
+  --widget-state: #08784d;
 }
 
-.widget-theme-violet {
+.app-shell.widget-mode.widget-theme-light.status-paused,
+.widget-preview.widget-theme-light.status-paused {
+  --widget-state: #875900;
+}
+
+.app-shell.widget-mode.widget-theme-light.status-overtime,
+.app-shell.widget-mode.widget-theme-light.status-alert,
+.widget-preview.widget-theme-light.status-overtime,
+.widget-preview.widget-theme-light.status-alert {
+  --widget-state: #b91c35;
+}
+
+.widget-theme-light .widget-primary.widget-action-play {
+  --widget-action: #08784d;
+}
+
+.app-shell.widget-mode.widget-theme-violet,
+.widget-preview.widget-theme-violet {
   --widget-surface: rgba(25, 14, 45, 0.97);
   --widget-text: #fbf7ff;
   --widget-muted: #c2a9d6;

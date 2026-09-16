@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"fmt"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -23,9 +24,10 @@ var projectSounds embed.FS
 func main() {
 	app := NewApp(projectSounds)
 	appInfo := buildinfo.Get()
+	windowTitle := fmt.Sprintf("%s v%s", appInfo.Name, appInfo.Version)
 
 	err := wails.Run(&options.App{
-		Title:       appInfo.Name,
+		Title:       windowTitle,
 		AlwaysOnTop: true,
 		Width:       960,
 		Height:      720,

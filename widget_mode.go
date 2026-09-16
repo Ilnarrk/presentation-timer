@@ -46,10 +46,10 @@ func (a *App) EnterWidgetMode() error {
 	widgetWidth, widgetHeight := windowmode.WidgetWidth, windowmode.WidgetHeight
 	if freePlacement {
 		if s.WidgetFreeWidth > 0 {
-			widgetWidth = max(s.WidgetFreeWidth, windowmode.WidgetMinWidth)
+			widgetWidth = min(max(s.WidgetFreeWidth, windowmode.WidgetMinWidth), windowmode.WidgetMaxWidth)
 		}
 		if s.WidgetFreeHeight > 0 {
-			widgetHeight = max(s.WidgetFreeHeight, windowmode.WidgetMinHeight)
+			widgetHeight = min(max(s.WidgetFreeHeight, windowmode.WidgetMinHeight), windowmode.WidgetMaxHeight)
 		}
 		widgetWidth = min(widgetWidth, work.Right-work.Left)
 		widgetHeight = min(widgetHeight, work.Bottom-work.Top)
@@ -60,8 +60,10 @@ func (a *App) EnterWidgetMode() error {
 	windowmode.SetRoundedCorners(hwnd, s.WidgetShape != settings.WidgetShapeRectangular)
 	if freePlacement {
 		runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
+		runtime.WindowSetMaxSize(a.ctx, windowmode.WidgetMaxWidth, windowmode.WidgetMaxHeight)
 	} else {
 		runtime.WindowSetMinSize(a.ctx, widgetWidth, widgetHeight)
+		runtime.WindowSetMaxSize(a.ctx, widgetWidth, widgetHeight)
 	}
 	runtime.WindowSetSize(a.ctx, widgetWidth, widgetHeight)
 	runtime.WindowSetPosition(a.ctx, wx, wy)
@@ -84,8 +86,8 @@ func (a *App) ExitWidgetMode() error {
 		w, h := runtime.WindowGetSize(a.ctx)
 		s.WidgetFreeX = x
 		s.WidgetFreeY = y
-		s.WidgetFreeWidth = w
-		s.WidgetFreeHeight = h
+		s.WidgetFreeWidth = min(max(w, windowmode.WidgetMinWidth), windowmode.WidgetMaxWidth)
+		s.WidgetFreeHeight = min(max(h, windowmode.WidgetMinHeight), windowmode.WidgetMaxHeight)
 		_ = a.settings.Save(s)
 	}
 
@@ -101,6 +103,7 @@ func (a *App) ExitWidgetMode() error {
 	if minH == 0 {
 		minH = normalWindowMinHeight
 	}
+	runtime.WindowSetMaxSize(a.ctx, 0, 0)
 	runtime.WindowSetMinSize(a.ctx, minW, minH)
 	runtime.WindowSetSize(a.ctx, a.normalBounds.w, a.normalBounds.h)
 	runtime.WindowSetPosition(a.ctx, a.normalBounds.x, a.normalBounds.y)

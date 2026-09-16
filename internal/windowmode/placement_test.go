@@ -57,4 +57,7 @@ func TestWidgetDefaultAndMinimumSizes(t *testing.T) {
 	if WidgetMinWidth != 280 || WidgetMinHeight != 88 {
 		t.Fatalf("unexpected minimum widget size: %dx%d", WidgetMinWidth, WidgetMinHeight)
 	}
+	if WidgetMaxWidth != 800 || WidgetMaxHeight != 240 {
+		t.Fatalf("unexpected maximum widget size: %dx%d", WidgetMaxWidth, WidgetMaxHeight)
+	}
 }

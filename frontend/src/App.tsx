@@ -948,7 +948,7 @@ function App() {
     } as React.CSSProperties;
   }, [timerScalePercent]);
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'expand') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -965,7 +965,7 @@ function App() {
       queue: <><path d="M8 7h11" /><path d="M8 12h11" /><path d="M8 17h11" /><circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" /></>,
       trash: <><path d="M5 7h14" /><path d="M9.5 7V5.5h5V7" /><path d="M8 7l.7 11.5h6.6L16 7" /></>,
       widget: <><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" /><rect x="13" y="6.5" width="5.5" height="4.5" rx="1" /></>,
-      expand: <><path d="M8 4.5h3.5V8" /><path d="M12.5 4.5 8 9" /><path d="M16 19.5h-3.5V16" /><path d="M11.5 19.5 16 15" /></>,
+      restore: <><rect x="6.5" y="6.5" width="12" height="12" rx="1.8" /><path d="M9.5 6.5v-.7A1.8 1.8 0 0 1 11.3 4h6.9A1.8 1.8 0 0 1 20 5.8v6.9a1.8 1.8 0 0 1-1.5 1.8" /></>,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -1000,6 +1000,7 @@ function App() {
   const widgetIsRunning = snapshot.isRunning && !snapshot.isPaused;
   const widgetIsComplete = snapshot.phase === 'completed';
   const widgetActionLabel = widgetIsRunning ? 'Поставить на паузу' : widgetIsComplete ? 'Сбросить таймер' : widgetIsPaused ? 'Продолжить' : 'Запустить';
+  const widgetAction = widgetIsRunning ? 'pause' : widgetIsComplete ? 'reset' : 'play';
 
   if (widgetMode) {
     return (
@@ -1009,12 +1010,12 @@ function App() {
           style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
         >
           <button
-            className="widget-primary"
+            className={`widget-primary widget-action-${widgetAction}`}
             onClick={widgetIsRunning ? () => Pause() : widgetIsComplete ? handleReset : handleStart}
             aria-label={widgetActionLabel}
             title={widgetActionLabel}
           >
-            {icon(widgetIsRunning ? 'pause' : widgetIsComplete ? 'reset' : 'play')}
+            {icon(widgetAction)}
           </button>
           <div className="widget-body">
             <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
@@ -1025,7 +1026,7 @@ function App() {
             aria-label="Развернуть таймер"
             title="Развернуть"
           >
-            {icon('expand')}
+            {icon('restore')}
           </button>
         </div>
       </div>
@@ -1039,10 +1040,6 @@ function App() {
     >
       <header className="topbar">
         <div className="topbar-left">
-          <div className="app-identity" title={`${appInfo.name}, версия ${appInfo.version}`}>
-            <span className="app-name">{appInfo.name}</span>
-            <span className="header-version">v{appInfo.version}</span>
-          </div>
           <button
             className="icon-button quiet widget-mode-toggle"
             aria-label="Перейти в режим виджета"
@@ -1440,9 +1437,9 @@ function App() {
               <div className={`widget-preview-stage preview-${widgetPlacement}`}>
                 <div className={`widget-preview ${statusClass} widget-theme-${widgetTheme} widget-shape-${widgetShape}`} aria-label="Предпросмотр виджета">
                   <div className="widget-chrome">
-                    <span className="widget-primary preview-control" aria-hidden="true">{icon(widgetIsRunning ? 'pause' : widgetIsComplete ? 'reset' : 'play')}</span>
+                    <span className={`widget-primary widget-action-${widgetAction} preview-control`} aria-hidden="true">{icon(widgetAction)}</span>
                     <div className="widget-body"><span className="widget-timer">{displayTime}</span></div>
-                    <span className="widget-restore preview-restore" aria-hidden="true">{icon('expand')}</span>
+                    <span className="widget-restore preview-restore" aria-hidden="true">{icon('restore')}</span>
                   </div>
                 </div>
               </div>
