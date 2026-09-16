@@ -110,31 +110,30 @@ func (c *Controller) run(ctx context.Context, runID uint64, resolved Resolved, d
 		})
 	}
 	progress(PhaseConnecting, browser.Description()+". Выполняется вход во встречу")
-	if err := resolved.Adapter.Join(joinCtx, browser, displayName, progress); err != nil {
-		if errors.Is(err, context.Canceled) && c.isCurrentRun(runID) && c.GetState().Phase == PhaseJoined {
-			<-ctx.Done()
-			browserCancel()
-			c.clearSession(runID)
-			return
-		}
-		if !errors.Is(err, context.Canceled) && c.isCurrentRun(runID) {
-			c.fail(err)
+	joinErr := resolved.Adapter.Join(joinCtx, browser, displayName, progress)
+	manuallyConfirmed := errors.Is(joinErr, context.Canceled) && c.isCurrentRun(runID) && c.GetState().Phase == PhaseJoined
+	if joinErr != nil && !manuallyConfirmed {
+		if !errors.Is(joinErr, context.Canceled) && c.isCurrentRun(runID) {
+			c.fail(joinErr)
 		}
 		c.clearSession(runID)
 		browserCancel()
 		return
 	}
 
-	if !c.updateIfCurrent(runID, func(state *State) {
-		state.Phase = PhaseJoined
-		state.Message = "Участник подключён; выполните тест звука"
-		state.Tested = false
-	}) {
-		browserCancel()
-		return
+	if !manuallyConfirmed {
+		if !c.updateIfCurrent(runID, func(state *State) {
+			state.Phase = PhaseJoined
+			state.Message = "Участник подключён; выполните тест звука"
+			state.Tested = false
+		}) {
+			browserCancel()
+			return
+		}
 	}
 	c.applyReceiveMuted(browser)
 	c.applyCameraEnabled(browser)
+	go c.watchConferenceLeft(ctx, runID, browser)
 
 	<-ctx.Done()
 	browserCancel()
@@ -473,7 +472,42 @@ func (c *Controller) watchBrowser(ctx context.Context, runID uint64, done <-chan
 	}
 }
 
+func (c *Controller) watchConferenceLeft(ctx context.Context, runID uint64, browser Browser) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	failedChecks := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			checkCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			var left bool
+			err := browser.Evaluate(checkCtx, conferenceLeftScript, &left)
+			cancel()
+			if err != nil {
+				failedChecks++
+				if failedChecks >= 3 && ctx.Err() == nil {
+					c.failSession(runID, "Соединение с браузером ВКС потеряно. Подключитесь заново")
+					return
+				}
+				continue
+			}
+			failedChecks = 0
+			if left {
+				c.endSession(runID, PhaseLeft, "Участник отключён в окне ВКС")
+				return
+			}
+		}
+	}
+}
+
 func (c *Controller) failSession(runID uint64, message string) {
+	c.endSession(runID, PhaseError, message)
+}
+
+func (c *Controller) endSession(runID uint64, phase Phase, message string) {
 	c.mu.Lock()
 	if c.runID != runID || c.cancel == nil {
 		c.mu.Unlock()
@@ -499,7 +533,7 @@ func (c *Controller) failSession(runID uint64, message string) {
 		browserCancel()
 	}
 	c.state.update(func(state *State) {
-		state.Phase = PhaseError
+		state.Phase = phase
 		state.Message = message
 		state.Tested = false
 		state.BrowserVisible = false

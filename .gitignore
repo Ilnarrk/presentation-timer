@@ -57,4 +57,5 @@ Desktop.ini
 
 # Local-only notes (not for git)
 local/
+graphify-out/
 

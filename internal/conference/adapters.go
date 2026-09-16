@@ -414,3 +414,71 @@ const joinProbeScript = `(async () => {
 
   return { joined: detectJoined(), waiting, error: '' };
 })()`
+
+// conferenceLeftScript passively watches the already joined page. It records a
+// click on a leave control, but only reports the session as left after that
+// control disappears, so opening and cancelling a confirmation does not tear
+// down the timer connection.
+const conferenceLeftScript = `(() => {
+  const normalize = (value) => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const leavePattern = /покинуть|завершить звонок|завершить встречу|выйти из встречи|отключиться от|leave call|hang up|disconnect|end call|выйти из комнаты|leave meeting/;
+  const frameWindows = () => {
+    const list = [window];
+    const visit = (win) => {
+      try {
+        win.document.querySelectorAll('iframe').forEach((frame) => {
+          try {
+            const child = frame.contentWindow;
+            if (child && !list.includes(child)) {
+              list.push(child);
+              visit(child);
+            }
+          } catch (_) {}
+        });
+      } catch (_) {}
+    };
+    visit(window);
+    return list;
+  };
+  const visible = (element) => {
+    if (!element || element.disabled) return false;
+    const view = element.ownerDocument?.defaultView || window;
+    const style = view.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+  };
+  const textOf = (element) => normalize([
+    element.innerText,
+    element.textContent,
+    element.getAttribute?.('aria-label'),
+    element.getAttribute?.('title'),
+    element.getAttribute?.('data-testid'),
+    element.getAttribute?.('data-qa')
+  ].filter(Boolean).join(' '));
+  const controls = [];
+  frameWindows().forEach((win) => {
+    try {
+      const doc = win.document;
+      if (!win.__timerLeaveWatchInstalled) {
+        win.__timerLeaveWatchInstalled = true;
+        doc.addEventListener('click', (event) => {
+          const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+          const control = path.find((node) => node?.matches?.('button, [role="button"], a, [aria-label], [title]'));
+          if (control && leavePattern.test(textOf(control))) {
+            window.__timerLeaveRequestedAt = Date.now();
+          }
+        }, true);
+      }
+      doc.querySelectorAll('button, [role="button"], a, [aria-label], [title]').forEach((element) => {
+        if (visible(element)) controls.push(textOf(element));
+      });
+    } catch (_) {}
+  });
+  const pageText = normalize(frameWindows().map((win) => {
+    try { return win.document.body?.innerText || ''; } catch (_) { return ''; }
+  }).join(' '));
+  const leftPage = /вы покинули|вы отключились|звонок завершен|звонок завершён|встреча завершена|конференция завершена|you left|call ended|meeting ended|rejoin/.test(pageText);
+  const leaveVisible = controls.some((text) => leavePattern.test(text));
+  const requestedAt = Number(window.__timerLeaveRequestedAt || 0);
+  return leftPage || (requestedAt > 0 && Date.now() - requestedAt > 750 && !leaveVisible);
+})()`

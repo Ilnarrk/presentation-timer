@@ -375,6 +375,42 @@ func TestWatchBrowserClearsUnexpectedlyClosedSession(t *testing.T) {
 	}
 }
 
+func TestWatchConferenceLeftClearsSession(t *testing.T) {
+	stateChanged := make(chan State, 4)
+	controller := NewController(func(state State) {
+		stateChanged <- state
+	})
+	controller.runID = 4
+	controller.cancel = func() {}
+	controller.browserCancel = func() {}
+	controller.browser = &fakeBrowser{result: true}
+	controller.state.update(func(state *State) {
+		state.Phase = PhaseJoined
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go controller.watchConferenceLeft(ctx, 4, controller.browser)
+
+	for {
+		select {
+		case state := <-stateChanged:
+			if state.Phase != PhaseLeft {
+				continue
+			}
+			if controller.cancel != nil || controller.browser != nil {
+				t.Fatal("left conference session was not cleared")
+			}
+			if !strings.Contains(state.Message, "окне ВКС") {
+				t.Fatalf("message = %q, want embedded-browser disconnect", state.Message)
+			}
+			return
+		case <-time.After(2 * time.Second):
+			t.Fatal("conference leave was not detected")
+		}
+	}
+}
+
 func TestProbeBrowserInfoRejectsNonLocalEndpoint(t *testing.T) {
 	if _, err := probeBrowserInfo(context.Background(), "http://example.com:9222"); err == nil {
 		t.Fatal("probeBrowserInfo() unexpectedly accepted a non-local endpoint")

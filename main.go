@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 
 	"github.com/wailsapp/wails/v2"
@@ -10,6 +11,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"timer/internal/buildinfo"
+	"timer/internal/singleinstance"
 )
 
 //go:embed all:frontend/dist
@@ -22,11 +24,21 @@ var assets embed.FS
 var projectSounds embed.FS
 
 func main() {
+	instanceLock, err := singleinstance.Acquire()
+	if errors.Is(err, singleinstance.ErrAlreadyRunning) {
+		return
+	}
+	if err != nil {
+		println("Error:", err.Error())
+		return
+	}
+	defer instanceLock.Close()
+
 	app := NewApp(projectSounds)
 	appInfo := buildinfo.Get()
 	windowTitle := fmt.Sprintf("%s v%s", appInfo.Name, appInfo.Version)
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:       windowTitle,
 		AlwaysOnTop: true,
 		Width:       960,
