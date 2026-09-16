@@ -36,6 +36,15 @@ import {
 } from '../wailsjs/go/main/App';
 import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
 import { buildinfo, session, settings, templates, timer } from '../wailsjs/go/models';
+import { TIMER_FONT_OPTIONS, timerFontClass, timerFontStyle } from './timerFonts';
+import {
+  buildWidgetColorStyle,
+  EMPTY_WIDGET_COLORS,
+  hasCustomWidgetColors,
+  widgetColorPreviewClass,
+  type WidgetColorKey,
+  type WidgetColorSettings,
+} from './widgetColors';
 
 type Phase = timer.Snapshot['phase'];
 
@@ -150,7 +159,7 @@ type WidgetPlacement = 'topRight' | 'topCenter' | 'topLeft' | 'free';
 type WidgetTheme = 'dark' | 'light' | 'green' | 'transparent';
 type WidgetShape = 'rounded' | 'rectangular';
 type TimerDisplayMode = 'ring' | 'digital';
-type TimerFont = 'system' | 'digital';
+type TimerFont = string;
 type SettingsTab = 'timer' | 'interface' | 'sound';
 const settingsTabs: Array<[SettingsTab, string]> = [['timer', 'Таймер'], ['interface', 'Интерфейс'], ['sound', 'Звук']];
 
@@ -332,6 +341,8 @@ function App() {
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
   const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
+  const [widgetColors, setWidgetColors] = useState<WidgetColorSettings>(EMPTY_WIDGET_COLORS);
+  const [widgetColorPreviewKey, setWidgetColorPreviewKey] = useState<WidgetColorKey | null>(null);
   const [widgetMode, setWidgetMode] = useState(false);
 
   const settingsLocked = snapshot.isRunning;
@@ -406,6 +417,10 @@ function App() {
       widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
       widgetTheme: next?.widgetTheme ?? widgetTheme,
       widgetShape: next?.widgetShape ?? widgetShape,
+      widgetColorIdle: next?.widgetColorIdle ?? widgetColors.widgetColorIdle,
+      widgetColorRunning: next?.widgetColorRunning ?? widgetColors.widgetColorRunning,
+      widgetColorPaused: next?.widgetColorPaused ?? widgetColors.widgetColorPaused,
+      widgetColorOvertime: next?.widgetColorOvertime ?? widgetColors.widgetColorOvertime,
     });
 
     setSaving(true);
@@ -421,6 +436,12 @@ function App() {
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
+      setWidgetColors({
+        widgetColorIdle: saved.widgetColorIdle ?? '',
+        widgetColorRunning: saved.widgetColorRunning ?? '',
+        widgetColorPaused: saved.widgetColorPaused ?? '',
+        widgetColorOvertime: saved.widgetColorOvertime ?? '',
+      });
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setError('');
@@ -451,6 +472,7 @@ function App() {
     widgetPlacement,
     widgetTheme,
     widgetShape,
+    widgetColors,
   ]);
 
   useEffect(() => {
@@ -497,6 +519,12 @@ function App() {
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
+      setWidgetColors({
+        widgetColorIdle: initialSettings.widgetColorIdle ?? '',
+        widgetColorRunning: initialSettings.widgetColorRunning ?? '',
+        widgetColorPaused: initialSettings.widgetColorPaused ?? '',
+        widgetColorOvertime: initialSettings.widgetColorOvertime ?? '',
+      });
       setWidgetMode(await IsWidgetMode());
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
@@ -960,6 +988,12 @@ function App() {
       : Math.min(1, Math.max(0, 1 - snapshot.remainingSeconds / Math.max(1, phaseDuration)));
   const ringLength = 854.5;
 
+  const widgetColorStyle = useMemo(() => buildWidgetColorStyle(widgetColors), [widgetColors]);
+  const widgetPreviewStatusClass = useMemo(
+    () => widgetColorPreviewClass(widgetColorPreviewKey, statusClass),
+    [widgetColorPreviewKey, statusClass],
+  );
+  const shellFontStyle = useMemo(() => timerFontStyle(timerFont), [timerFont]);
   const timerScaleStyle = useMemo(() => {
     const scaledSize = 68 * timerScalePercent / 100;
     return {
@@ -1023,29 +1057,32 @@ function App() {
 
   if (widgetMode) {
     return (
-      <div className={`app-shell widget-mode ${statusClass} timer-font-${timerFont} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}>
+      <div
+        className={`app-shell widget-mode ${statusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
+        style={{ ...widgetColorStyle, ...shellFontStyle }}
+      >
         <div
           className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
           style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
         >
-          <button
-            className={`widget-primary widget-action-${widgetAction}`}
-            onClick={widgetIsRunning ? () => Pause() : handleStart}
-            aria-label={widgetActionLabel}
-            title={widgetActionLabel}
-          >
-            {icon(widgetAction)}
-          </button>
-          <div className="widget-body">
-            <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
-          </div>
-          <div className="widget-actions" aria-label="Переходы таймера">
-            <button className="widget-secondary" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
-              {icon('questions')}
+          <div className="widget-controls" aria-label="Управление таймером">
+            <button
+              className={`widget-primary widget-action-${widgetAction}`}
+              onClick={widgetIsRunning ? () => Pause() : handleStart}
+              aria-label={widgetActionLabel}
+              title={widgetActionLabel}
+            >
+              {icon(widgetAction)}
             </button>
-            <button className="widget-secondary" onClick={handleNextSpeaker} disabled={!['talk', 'talkOvertime', 'questions', 'questionsOvertime'].includes(snapshot.phase)} aria-label="Следующий докладчик" title="Следующий докладчик">
+            <button className="widget-secondary widget-secondary-compact" onClick={handleNextSpeaker} disabled={!['talk', 'talkOvertime', 'questions', 'questionsOvertime'].includes(snapshot.phase)} aria-label="Следующий докладчик" title="Следующий докладчик">
               {icon('next')}
             </button>
+            <button className="widget-secondary widget-secondary-compact" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
+              {icon('questions')}
+            </button>
+          </div>
+          <div className="widget-body">
+            <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
           </div>
           <button
             className="icon-button quiet widget-restore"
@@ -1062,8 +1099,8 @@ function App() {
 
   return (
     <div
-      className={`app-shell timer-display-${timerDisplayMode} timer-font-${timerFont}${sessionPanelOpen ? ' has-session-panel' : ''}`}
-      style={timerScaleStyle}
+      className={`app-shell timer-display-${timerDisplayMode} ${timerFontClass(timerFont)}${sessionPanelOpen ? ' has-session-panel' : ''}`}
+      style={{ ...timerScaleStyle, ...shellFontStyle }}
     >
       <header className="topbar">
         <div className="topbar-left">
@@ -1465,9 +1502,10 @@ function App() {
               </label>
               <label>
                 Шрифт цифр
-                <select value={timerFont} onChange={async (event) => { const next = event.target.value as TimerFont; setTimerFont(next); await persistSettings({ timerFont: next }); }}>
-                  <option value="system">Системный</option>
-                  <option value="digital">Digital Normal</option>
+                <select value={timerFont} onChange={async (event) => { const next = event.target.value; setTimerFont(next); await persistSettings({ timerFont: next }); }}>
+                  {TIMER_FONT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -1486,10 +1524,67 @@ function App() {
                   <span className="digit-size-value">{timerScalePercent}%</span>
                 </div>
               </label>
+              <fieldset className="widget-option-group widget-color-group">
+                <legend className="widget-color-legend-row">
+                  <span>Цвета цифр</span>
+                  <button
+                    type="button"
+                    className="text-button secondary compact-button widget-color-reset"
+                    disabled={!hasCustomWidgetColors(widgetColors)}
+                    onClick={async () => {
+                      setWidgetColors(EMPTY_WIDGET_COLORS);
+                      setWidgetColorPreviewKey(null);
+                      await persistSettings({
+                        widgetColorIdle: '',
+                        widgetColorRunning: '',
+                        widgetColorPaused: '',
+                        widgetColorOvertime: '',
+                      });
+                    }}
+                  >
+                    Сброс
+                  </button>
+                </legend>
+                <div className="widget-color-grid">
+                  {([
+                    ['widgetColorIdle', 'Ожидание', '#8ec5ff'],
+                    ['widgetColorRunning', 'Доклад', '#69e0b0'],
+                    ['widgetColorPaused', 'Пауза', '#ffd271'],
+                    ['widgetColorOvertime', 'Перерасход', '#ff8794'],
+                  ] as const).map(([key, label, fallback]) => (
+                    <label
+                      key={key}
+                      className={`widget-color-field${widgetColorPreviewKey === key ? ' is-active' : ''}`}
+                    >
+                      <span>{label}</span>
+                      <input
+                        type="color"
+                        value={widgetColors[key] || fallback}
+                        onFocus={() => setWidgetColorPreviewKey(key)}
+                        onChange={async (event) => {
+                          setWidgetColorPreviewKey(key);
+                          const next = { ...widgetColors, [key]: event.target.value };
+                          setWidgetColors(next);
+                          await persistSettings({ [key]: event.target.value });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
               <div className={`widget-preview-stage preview-${widgetPlacement}`}>
-                <div className={`widget-preview ${statusClass} timer-font-${timerFont} widget-theme-${widgetTheme} widget-shape-${widgetShape}`} aria-label="Предпросмотр виджета">
+                <div
+                  className={`widget-preview ${widgetPreviewStatusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
+                  style={{ ...widgetColorStyle, ...shellFontStyle }}
+                  aria-label="Предпросмотр виджета"
+                >
                   <div className="widget-chrome">
-                    <span className={`widget-primary widget-action-${widgetAction} preview-control`} aria-hidden="true">{icon(widgetAction)}</span>
+                    <div className="widget-controls preview-controls" aria-hidden="true">
+                      <span className={`widget-primary widget-action-${widgetAction} preview-control`}>{icon(widgetAction)}</span>
+                      <span className="widget-secondary widget-secondary-compact preview-control">{icon('next')}</span>
+                      <span className="widget-secondary widget-secondary-compact preview-control">{icon('questions')}</span>
+                    </div>
                     <div className="widget-body"><span className="widget-timer">{displayTime}</span></div>
                     <span className="widget-restore preview-restore" aria-hidden="true">{icon('restore')}</span>
                   </div>

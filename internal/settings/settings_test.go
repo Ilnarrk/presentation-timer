@@ -146,6 +146,14 @@ func TestKeepSessionPreservesTemplate(t *testing.T) {
 	if got.WidgetFreeX != 420 || got.WidgetFreeY != 64 || got.WidgetFreeWidth != 560 || got.WidgetFreeHeight != 160 {
 		t.Fatalf("saved free widget bounds should stay: %+v", got)
 	}
+	stored.MainWindowX = 180
+	stored.MainWindowY = 90
+	stored.MainWindowWidth = 1024
+	stored.MainWindowHeight = 768
+	got = KeepSession(input, stored)
+	if got.MainWindowX != 180 || got.MainWindowY != 90 || got.MainWindowWidth != 1024 || got.MainWindowHeight != 768 {
+		t.Fatalf("saved main window bounds should stay: %+v", got)
+	}
 }
 
 func TestLoadSessionTemplateFromJSON(t *testing.T) {
@@ -250,6 +258,71 @@ func TestNormalizeLegacyVioletTheme(t *testing.T) {
 	got := normalize(value, Default())
 	if got.WidgetTheme != WidgetThemeTransparent {
 		t.Fatalf("legacy violet theme was not migrated: %+v", got)
+	}
+}
+
+func TestNormalizeWidgetColors(t *testing.T) {
+	value := Default()
+	value.WidgetColorIdle = "#35d6a0"
+	value.WidgetColorRunning = "bad"
+	value.WidgetColorPaused = "not-a-color"
+	value.WidgetColorOvertime = "#ff8794"
+	got := normalize(value, Default())
+	if got.WidgetColorIdle != "#35d6a0" || got.WidgetColorOvertime != "#ff8794" {
+		t.Fatalf("valid widget colors were not preserved: %+v", got)
+	}
+	if got.WidgetColorRunning != "" || got.WidgetColorPaused != "" {
+		t.Fatalf("invalid widget colors should be cleared: %+v", got)
+	}
+}
+
+func TestNormalizeTimerFont(t *testing.T) {
+	if normalizeTimerFont("custom-font_1") != "custom-font_1" {
+		t.Fatal("custom timer font id should be accepted")
+	}
+	if normalizeTimerFont("system") != TimerFontSystem {
+		t.Fatal("system timer font should stay system")
+	}
+	if normalizeTimerFont("INVALID") != TimerFontSystem {
+		t.Fatal("invalid timer font should fall back to system")
+	}
+}
+
+func TestWidgetColorsRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.WidgetColorIdle = "#35d6a0"
+	input.WidgetColorRunning = "#69e0b0"
+	input.WidgetColorPaused = "#ffd271"
+	input.WidgetColorOvertime = "#ff8794"
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.WidgetColorIdle != "#35d6a0" || got.WidgetColorRunning != "#69e0b0" || got.WidgetColorPaused != "#ffd271" || got.WidgetColorOvertime != "#ff8794" {
+		t.Fatalf("widget colors not saved: %+v", got)
+	}
+}
+
+func TestMainWindowBoundsRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.MainWindowX = 120
+	input.MainWindowY = 80
+	input.MainWindowWidth = 1024
+	input.MainWindowHeight = 768
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.MainWindowX != 120 || got.MainWindowY != 80 || got.MainWindowWidth != 1024 || got.MainWindowHeight != 768 {
+		t.Fatalf("main window bounds not saved: %+v", got)
 	}
 }
 

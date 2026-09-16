@@ -5,11 +5,11 @@ import "timer/internal/settings"
 const (
 	WidgetWidth     = 400
 	WidgetHeight    = 120
-	WidgetMinWidth  = 280
+	WidgetMinWidth  = 360
 	WidgetMinHeight = 88
 	WidgetMaxWidth  = 800
 	WidgetMaxHeight = 240
-	WidgetMargin    = 12
+	WidgetMargin    = 2
 )
 
 type WorkArea struct {

@@ -74,6 +74,72 @@ func (a *App) EnterWidgetMode() error {
 	return nil
 }
 
+func (a *App) saveWidgetBounds() {
+	if a.ctx == nil || a.settings == nil {
+		return
+	}
+	s := a.settings.Get()
+	if settings.NormalizeWidgetPlacement(s.WidgetPlacement) != settings.WidgetPlacementFree {
+		return
+	}
+	x, y := runtime.WindowGetPosition(a.ctx)
+	w, h := runtime.WindowGetSize(a.ctx)
+	s.WidgetFreeX = x
+	s.WidgetFreeY = y
+	s.WidgetFreeWidth = min(max(w, windowmode.WidgetMinWidth), windowmode.WidgetMaxWidth)
+	s.WidgetFreeHeight = min(max(h, windowmode.WidgetMinHeight), windowmode.WidgetMaxHeight)
+	_ = a.settings.Save(s)
+}
+
+func (a *App) saveMainWindowBounds() {
+	if a.ctx == nil || a.settings == nil {
+		return
+	}
+	s := a.settings.Get()
+	a.mu.Lock()
+	widgetMode := a.widgetMode
+	bounds := a.normalBounds
+	a.mu.Unlock()
+
+	if widgetMode && bounds.w > 0 && bounds.h > 0 {
+		s.MainWindowX = bounds.x
+		s.MainWindowY = bounds.y
+		s.MainWindowWidth = bounds.w
+		s.MainWindowHeight = bounds.h
+		_ = a.settings.Save(s)
+		return
+	}
+	if widgetMode {
+		return
+	}
+	x, y := runtime.WindowGetPosition(a.ctx)
+	w, h := runtime.WindowGetSize(a.ctx)
+	if w <= 0 || h <= 0 {
+		return
+	}
+	s.MainWindowX = x
+	s.MainWindowY = y
+	s.MainWindowWidth = w
+	s.MainWindowHeight = h
+	_ = a.settings.Save(s)
+}
+
+func (a *App) restoreMainWindowBounds() {
+	if a.ctx == nil || a.settings == nil {
+		return
+	}
+	s := a.settings.Get()
+	if s.MainWindowWidth <= 0 || s.MainWindowHeight <= 0 {
+		return
+	}
+	work := windowmode.WorkAreaForBounds(s.MainWindowX, s.MainWindowY, s.MainWindowWidth, s.MainWindowHeight)
+	width := min(max(s.MainWindowWidth, normalWindowMinWidth), work.Right-work.Left)
+	height := min(max(s.MainWindowHeight, normalWindowMinHeight), work.Bottom-work.Top)
+	x, y := windowmode.ClampPosition(work, width, height, s.MainWindowX, s.MainWindowY)
+	runtime.WindowSetSize(a.ctx, width, height)
+	runtime.WindowSetPosition(a.ctx, x, y)
+}
+
 func (a *App) ExitWidgetMode() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -81,16 +147,7 @@ func (a *App) ExitWidgetMode() error {
 		return nil
 	}
 
-	s := a.settings.Get()
-	x, y := runtime.WindowGetPosition(a.ctx)
-	if settings.NormalizeWidgetPlacement(s.WidgetPlacement) == settings.WidgetPlacementFree {
-		w, h := runtime.WindowGetSize(a.ctx)
-		s.WidgetFreeX = x
-		s.WidgetFreeY = y
-		s.WidgetFreeWidth = min(max(w, windowmode.WidgetMinWidth), windowmode.WidgetMaxWidth)
-		s.WidgetFreeHeight = min(max(h, windowmode.WidgetMinHeight), windowmode.WidgetMaxHeight)
-		_ = a.settings.Save(s)
-	}
+	a.saveWidgetBounds()
 
 	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
 	windowmode.SetFrameless(hwnd, false, false)

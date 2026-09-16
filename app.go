@@ -132,9 +132,17 @@ func (a *App) startup(ctx context.Context) {
 	)
 
 	runtime.EventsEmit(ctx, "timer:state", a.engine.Snapshot())
+	a.restoreMainWindowBounds()
 }
 
 func (a *App) shutdown(ctx context.Context) {
+	a.mu.Lock()
+	widgetMode := a.widgetMode
+	a.mu.Unlock()
+	if widgetMode {
+		a.saveWidgetBounds()
+	}
+	a.saveMainWindowBounds()
 	if a.engine != nil {
 		a.engine.Stop()
 	}

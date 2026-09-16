@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -44,6 +46,14 @@ type Settings struct {
 	WidgetFreeY                int      `json:"widgetFreeY"`
 	WidgetFreeWidth            int      `json:"widgetFreeWidth"`
 	WidgetFreeHeight           int      `json:"widgetFreeHeight"`
+	WidgetColorIdle            string   `json:"widgetColorIdle"`
+	WidgetColorRunning         string   `json:"widgetColorRunning"`
+	WidgetColorPaused          string   `json:"widgetColorPaused"`
+	WidgetColorOvertime        string   `json:"widgetColorOvertime"`
+	MainWindowX                int      `json:"mainWindowX"`
+	MainWindowY                int      `json:"mainWindowY"`
+	MainWindowWidth            int      `json:"mainWindowWidth"`
+	MainWindowHeight           int      `json:"mainWindowHeight"`
 }
 
 const (
@@ -66,6 +76,8 @@ const (
 	TimerFontSystem         = "system"
 	TimerFontDigital        = "digital"
 )
+
+var timerFontIDPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
 func NormalizeWidgetPlacement(placement string) string {
 	switch placement {
@@ -180,6 +192,10 @@ func KeepSession(input, stored Settings) Settings {
 	input.WidgetFreeY = stored.WidgetFreeY
 	input.WidgetFreeWidth = stored.WidgetFreeWidth
 	input.WidgetFreeHeight = stored.WidgetFreeHeight
+	input.MainWindowX = stored.MainWindowX
+	input.MainWindowY = stored.MainWindowY
+	input.MainWindowWidth = stored.MainWindowWidth
+	input.MainWindowHeight = stored.MainWindowHeight
 	return input
 }
 
@@ -271,11 +287,11 @@ func normalize(value, fallback Settings) Settings {
 	default:
 		value.TimerDisplayMode = TimerDisplayModeRing
 	}
-	switch value.TimerFont {
-	case TimerFontDigital:
-	default:
-		value.TimerFont = TimerFontSystem
-	}
+	value.TimerFont = normalizeTimerFont(value.TimerFont)
+	value.WidgetColorIdle = normalizeWidgetColor(value.WidgetColorIdle)
+	value.WidgetColorRunning = normalizeWidgetColor(value.WidgetColorRunning)
+	value.WidgetColorPaused = normalizeWidgetColor(value.WidgetColorPaused)
+	value.WidgetColorOvertime = normalizeWidgetColor(value.WidgetColorOvertime)
 	switch value.WidgetPlacement {
 	case WidgetPlacementTopLeft, WidgetPlacementTopCenter, WidgetPlacementFree:
 	default:
@@ -303,6 +319,46 @@ func normalize(value, fallback Settings) Settings {
 		value.WidgetShape = WidgetShapeRounded
 	}
 	return value
+}
+
+func normalizeTimerFont(font string) string {
+	if font == TimerFontSystem {
+		return TimerFontSystem
+	}
+	if timerFontIDPattern.MatchString(font) && font != TimerFontSystem {
+		return font
+	}
+	return TimerFontSystem
+}
+
+func normalizeWidgetColor(color string) string {
+	color = strings.TrimSpace(color)
+	if color == "" {
+		return ""
+	}
+	if !isValidHexColor(color) {
+		return ""
+	}
+	return strings.ToLower(color)
+}
+
+func isValidHexColor(color string) bool {
+	if len(color) != 4 && len(color) != 7 {
+		return false
+	}
+	if color[0] != '#' {
+		return false
+	}
+	for _, ch := range color[1:] {
+		switch {
+		case ch >= '0' && ch <= '9':
+		case ch >= 'a' && ch <= 'f':
+		case ch >= 'A' && ch <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) saveLocked() error {

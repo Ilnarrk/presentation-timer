@@ -234,6 +234,14 @@ export namespace settings {
 	    widgetFreeY: number;
 	    widgetFreeWidth: number;
 	    widgetFreeHeight: number;
+	    widgetColorIdle: string;
+	    widgetColorRunning: string;
+	    widgetColorPaused: string;
+	    widgetColorOvertime: string;
+	    mainWindowX: number;
+	    mainWindowY: number;
+	    mainWindowWidth: number;
+	    mainWindowHeight: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -276,6 +284,14 @@ export namespace settings {
 	        this.widgetFreeY = source["widgetFreeY"];
 	        this.widgetFreeWidth = source["widgetFreeWidth"];
 	        this.widgetFreeHeight = source["widgetFreeHeight"];
+	        this.widgetColorIdle = source["widgetColorIdle"];
+	        this.widgetColorRunning = source["widgetColorRunning"];
+	        this.widgetColorPaused = source["widgetColorPaused"];
+	        this.widgetColorOvertime = source["widgetColorOvertime"];
+	        this.mainWindowX = source["mainWindowX"];
+	        this.mainWindowY = source["mainWindowY"];
+	        this.mainWindowWidth = source["mainWindowWidth"];
+	        this.mainWindowHeight = source["mainWindowHeight"];
 	    }
 	}
 
@@ -355,3 +371,4 @@ export namespace timer {
 	}
 
 }
+
