@@ -17,3 +17,5 @@ func WorkAreaForBounds(_, _, _, _ int) WorkArea {
 func SetFrameless(_ uintptr, _, _ bool) {}
 
 func SetRoundedCorners(_ uintptr, _ bool) {}
+
+func SetWidgetBorderHidden(_ uintptr, _ bool) {}

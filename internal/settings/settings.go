@@ -35,6 +35,8 @@ type Settings struct {
 	SessionUseDefaultTalk      bool     `json:"sessionUseDefaultTalk"`
 	SessionUseDefaultQuestions bool     `json:"sessionUseDefaultQuestions"`
 	TimerScalePercent          int      `json:"timerScalePercent"`
+	TimerDisplayMode           string   `json:"timerDisplayMode"`
+	TimerFont                  string   `json:"timerFont"`
 	WidgetPlacement            string   `json:"widgetPlacement"`
 	WidgetTheme                string   `json:"widgetTheme"`
 	WidgetShape                string   `json:"widgetShape"`
@@ -55,9 +57,14 @@ const (
 	WidgetPlacementFree     = "free"
 	WidgetThemeDark         = "dark"
 	WidgetThemeLight        = "light"
-	WidgetThemeViolet       = "violet"
+	WidgetThemeGreen        = "green"
+	WidgetThemeTransparent  = "transparent"
 	WidgetShapeRounded      = "rounded"
 	WidgetShapeRectangular  = "rectangular"
+	TimerDisplayModeRing    = "ring"
+	TimerDisplayModeDigital = "digital"
+	TimerFontSystem         = "system"
+	TimerFontDigital        = "digital"
 )
 
 func NormalizeWidgetPlacement(placement string) string {
@@ -89,6 +96,8 @@ func Default() Settings {
 		SessionUseDefaultTalk:      true,
 		SessionUseDefaultQuestions: true,
 		TimerScalePercent:          DefaultTimerScalePercent,
+		TimerDisplayMode:           TimerDisplayModeRing,
+		TimerFont:                  TimerFontSystem,
 		WidgetPlacement:            WidgetPlacementTopRight,
 		WidgetTheme:                WidgetThemeDark,
 		WidgetShape:                WidgetShapeRounded,
@@ -257,6 +266,16 @@ func normalize(value, fallback Settings) Settings {
 	if value.TimerScalePercent > MaxTimerScalePercent {
 		value.TimerScalePercent = MaxTimerScalePercent
 	}
+	switch value.TimerDisplayMode {
+	case TimerDisplayModeDigital:
+	default:
+		value.TimerDisplayMode = TimerDisplayModeRing
+	}
+	switch value.TimerFont {
+	case TimerFontDigital:
+	default:
+		value.TimerFont = TimerFontSystem
+	}
 	switch value.WidgetPlacement {
 	case WidgetPlacementTopLeft, WidgetPlacementTopCenter, WidgetPlacementFree:
 	default:
@@ -270,7 +289,9 @@ func normalize(value, fallback Settings) Settings {
 		}
 	}
 	switch value.WidgetTheme {
-	case WidgetThemeLight, WidgetThemeViolet:
+	case "violet":
+		value.WidgetTheme = WidgetThemeTransparent
+	case WidgetThemeLight, WidgetThemeGreen, WidgetThemeTransparent:
 	default:
 		value.WidgetTheme = WidgetThemeDark
 	}

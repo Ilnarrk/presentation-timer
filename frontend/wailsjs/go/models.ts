@@ -225,6 +225,8 @@ export namespace settings {
 	    sessionUseDefaultTalk: boolean;
 	    sessionUseDefaultQuestions: boolean;
 	    timerScalePercent: number;
+	    timerDisplayMode: string;
+	    timerFont: string;
 	    widgetPlacement: string;
 	    widgetTheme: string;
 	    widgetShape: string;
@@ -265,6 +267,8 @@ export namespace settings {
 	        this.sessionUseDefaultTalk = source["sessionUseDefaultTalk"];
 	        this.sessionUseDefaultQuestions = source["sessionUseDefaultQuestions"];
 	        this.timerScalePercent = source["timerScalePercent"];
+	        this.timerDisplayMode = source["timerDisplayMode"];
+	        this.timerFont = source["timerFont"];
 	        this.widgetPlacement = source["widgetPlacement"];
 	        this.widgetTheme = source["widgetTheme"];
 	        this.widgetShape = source["widgetShape"];

@@ -1809,6 +1809,12 @@ input[type="range"] {
 }
 
 /* Presentation-first timer redesign */
+@font-face {
+  font-family: "Digital Normal";
+  src: url("./assets/fonts/DigitalNormal.otf") format("opentype");
+  font-display: swap;
+}
+
 :root {
   --bg-app: #080b12;
   --bg-surface: #0d1420;
@@ -1930,6 +1936,36 @@ body {
   text-align: center;
 }
 
+.timer-font-digital .timer-value,
+.timer-font-digital .widget-timer {
+  font-family: "Digital Normal", "Courier New", monospace;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.timer-display-digital .timer-ring {
+  width: min(96cqw, 100%);
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: auto;
+  filter: none;
+}
+
+.timer-display-digital .progress-ring {
+  display: none;
+}
+
+.timer-display-digital .timer-content {
+  width: 100%;
+  padding: 3cqh 0;
+}
+
+.timer-display-digital .timer-value {
+  font-size: clamp(5rem, 46cqi, 18rem);
+  line-height: 0.86;
+}
+
 .timer-units {
   display: grid;
   grid-template-columns: 1fr 1px 1fr;
@@ -1997,6 +2033,7 @@ body {
   --widget-timer-size: clamp(50px, min(22cqw, 68cqh), 168px);
   --widget-restore-size: clamp(28px, min(8cqw, 22cqh), 48px);
   --widget-radius: clamp(16px, 4cqh, 28px);
+  --widget-restore-color: rgba(248, 251, 255, 0.64);
   container-type: size;
   color: var(--widget-text);
 }
@@ -2028,11 +2065,11 @@ body {
   grid-template-columns: var(--widget-control-size) minmax(0, 1fr) var(--widget-control-size);
   gap: clamp(8px, 3cqw, 18px);
   padding: clamp(8px, 6cqh, 14px) clamp(10px, 4cqw, 18px);
-  border-color: color-mix(in srgb, var(--widget-state) 78%, white 8%);
+  border: 0;
   border-radius: var(--widget-radius);
   background: var(--widget-surface);
-  box-shadow: var(--shadow-widget), inset 0 0 0 1px rgba(255, 255, 255, 0.035);
-  transition: border-color 180ms ease, box-shadow 180ms ease, border-radius 180ms ease;
+  box-shadow: none;
+  transition: border-radius 180ms ease;
 }
 
 .widget-chrome::after {
@@ -2054,7 +2091,7 @@ body {
 .widget-mode.status-alert .widget-timer {
   color: var(--widget-state);
   font-size: var(--widget-timer-size);
-  font-weight: 350;
+  font-weight: 600;
   line-height: 0.94;
   letter-spacing: -0.045em;
 }
@@ -2069,7 +2106,7 @@ body {
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--widget-action) 88%, white 12%);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--widget-action) 22%, transparent);
+  background: color-mix(in srgb, var(--widget-action) 44%, transparent);
   color: color-mix(in srgb, var(--widget-action) 62%, white 38%);
   cursor: pointer;
   box-shadow: 0 5px 18px color-mix(in srgb, var(--widget-action) 18%, transparent);
@@ -2081,8 +2118,8 @@ body {
 }
 
 .widget-primary:hover {
-  transform: scale(1.04);
-  background: color-mix(in srgb, var(--widget-action) 34%, transparent);
+  transform: none;
+  background: color-mix(in srgb, var(--widget-action) 52%, transparent);
 }
 
 .widget-primary svg,
@@ -2111,17 +2148,18 @@ body {
   bottom: clamp(7px, 6cqh, 12px);
   width: var(--widget-restore-size);
   height: var(--widget-restore-size);
-  border-radius: 9px;
-  border-color: color-mix(in srgb, var(--widget-state) 35%, transparent);
-  background: color-mix(in srgb, var(--widget-state) 10%, transparent);
-  color: var(--widget-state);
-  opacity: 0.9;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--widget-restore-color);
+  opacity: 0.7;
 }
 
 .icon-button.quiet.widget-restore:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--widget-state) 58%, transparent);
-  background: color-mix(in srgb, var(--widget-state) 18%, transparent);
-  color: var(--widget-state);
+  border: 0;
+  background: transparent;
+  color: var(--widget-restore-color);
+  opacity: 1;
 }
 
 .widget-restore svg,
@@ -2139,10 +2177,11 @@ body {
 
 .app-shell.widget-mode.widget-theme-light,
 .widget-preview.widget-theme-light {
-  --widget-state: #185da8;
+  --widget-state: #08784d;
   --widget-surface: rgba(247, 250, 255, 0.98);
   --widget-text: #101827;
   --widget-muted: #42536d;
+  --widget-restore-color: rgba(16, 24, 39, 0.58);
 }
 
 .app-shell.widget-mode.widget-theme-light.status-running,
@@ -2166,11 +2205,20 @@ body {
   --widget-action: #08784d;
 }
 
-.app-shell.widget-mode.widget-theme-violet,
-.widget-preview.widget-theme-violet {
-  --widget-surface: rgba(25, 14, 45, 0.97);
-  --widget-text: #fbf7ff;
-  --widget-muted: #c2a9d6;
+.app-shell.widget-mode.widget-theme-green,
+.widget-preview.widget-theme-green {
+  --widget-state: #ffffff;
+  --widget-surface: #08784d;
+  --widget-text: #ffffff;
+  --widget-muted: rgba(255, 255, 255, 0.72);
+  --widget-restore-color: rgba(255, 255, 255, 0.65);
+}
+
+.app-shell.widget-mode.widget-theme-transparent,
+.widget-preview.widget-theme-transparent {
+  --widget-surface: transparent;
+  --widget-text: #f8fbff;
+  --widget-muted: rgba(248, 251, 255, 0.72);
 }
 
 html:has(.widget-mode),
@@ -2246,7 +2294,7 @@ body:has(.widget-mode),
 }
 
 .theme-choices {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .shape-choices {
@@ -2316,9 +2364,39 @@ body:has(.widget-mode),
 
 .theme-dark { background: #09101d; }
 .theme-light { background: #f4f8ff; }
-.theme-violet { background: #211139; }
+.theme-green { background: #08784d; }
+.theme-transparent { background: linear-gradient(135deg, transparent 42%, #8190a9 43% 57%, transparent 58%); }
 .shape-rectangular { border-radius: 0; background: #26334a; }
 .shape-rounded { border-radius: 8px; background: #26334a; }
+
+.settings-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #9aa8c0;
+  cursor: pointer;
+}
+
+.settings-tabs button.is-selected {
+  background: rgba(59, 156, 255, 0.18);
+  color: #f4f7ff;
+}
+
+.settings-tabs button:focus-visible {
+  outline: 2px solid #b8d8ff;
+  outline-offset: 2px;
+}
 
 @media (max-height: 620px) {
   .timer-stage {

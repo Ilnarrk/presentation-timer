@@ -58,6 +58,7 @@ func (a *App) EnterWidgetMode() error {
 
 	windowmode.SetFrameless(hwnd, true, freePlacement)
 	windowmode.SetRoundedCorners(hwnd, s.WidgetShape != settings.WidgetShapeRectangular)
+	windowmode.SetWidgetBorderHidden(hwnd, true)
 	if freePlacement {
 		runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
 		runtime.WindowSetMaxSize(a.ctx, windowmode.WidgetMaxWidth, windowmode.WidgetMaxHeight)
@@ -94,6 +95,7 @@ func (a *App) ExitWidgetMode() error {
 	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
 	windowmode.SetFrameless(hwnd, false, false)
 	windowmode.SetRoundedCorners(hwnd, true)
+	windowmode.SetWidgetBorderHidden(hwnd, false)
 
 	minW := a.normalMinW
 	minH := a.normalMinH

@@ -169,3 +169,22 @@ func SetRoundedCorners(hwnd uintptr, rounded bool) {
 		unsafe.Sizeof(preference),
 	)
 }
+
+func SetWidgetBorderHidden(hwnd uintptr, hidden bool) {
+	if hwnd == 0 {
+		return
+	}
+	const dwmwaBorderColor = 34
+	const dwmwaColorNone uint32 = 0xFFFFFFFE
+	const dwmwaColorDefault uint32 = 0xFFFFFFFF
+	color := dwmwaColorDefault
+	if hidden {
+		color = dwmwaColorNone
+	}
+	procDwmSetWindowAttribute.Call(
+		hwnd,
+		uintptr(dwmwaBorderColor),
+		uintptr(unsafe.Pointer(&color)),
+		unsafe.Sizeof(color),
+	)
+}

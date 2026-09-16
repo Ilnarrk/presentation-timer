@@ -30,6 +30,9 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	if got.TimerScalePercent != DefaultTimerScalePercent {
 		t.Fatalf("old settings did not receive timerScalePercent default: %+v", got)
 	}
+	if got.TimerDisplayMode != TimerDisplayModeRing || got.TimerFont != TimerFontSystem {
+		t.Fatalf("old settings did not receive timer display defaults: %+v", got)
+	}
 	if got.WidgetPlacement != WidgetPlacementTopRight {
 		t.Fatalf("old settings did not receive widgetPlacement default: %+v", got)
 	}
@@ -215,11 +218,13 @@ func TestWidgetAppearanceRoundTrip(t *testing.T) {
 	input := Default()
 	input.WidgetTheme = WidgetThemeLight
 	input.WidgetShape = WidgetShapeRectangular
+	input.TimerDisplayMode = TimerDisplayModeDigital
+	input.TimerFont = TimerFontDigital
 	if err := store.Save(input); err != nil {
 		t.Fatal(err)
 	}
 	got := store.Get()
-	if got.WidgetTheme != WidgetThemeLight || got.WidgetShape != WidgetShapeRectangular {
+	if got.WidgetTheme != WidgetThemeLight || got.WidgetShape != WidgetShapeRectangular || got.TimerDisplayMode != TimerDisplayModeDigital || got.TimerFont != TimerFontDigital {
 		t.Fatalf("widget appearance not saved: %+v", got)
 	}
 }
@@ -236,6 +241,15 @@ func TestNormalizeWidgetAppearance(t *testing.T) {
 	value.WidgetShape = "square"
 	if got = normalize(value, Default()); got.WidgetShape != WidgetShapeRectangular {
 		t.Fatalf("legacy square shape was not migrated: %+v", got)
+	}
+}
+
+func TestNormalizeLegacyVioletTheme(t *testing.T) {
+	value := Default()
+	value.WidgetTheme = "violet"
+	got := normalize(value, Default())
+	if got.WidgetTheme != WidgetThemeTransparent {
+		t.Fatalf("legacy violet theme was not migrated: %+v", got)
 	}
 }
 

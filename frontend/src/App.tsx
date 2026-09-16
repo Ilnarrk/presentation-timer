@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import './styles.css';
 import {
   ConfirmConferenceJoined,
@@ -148,8 +148,12 @@ const MAX_TIMER_SCALE = 140;
 const DEFAULT_TIMER_SCALE = 115;
 
 type WidgetPlacement = 'topRight' | 'topCenter' | 'topLeft' | 'free';
-type WidgetTheme = 'dark' | 'light' | 'violet';
+type WidgetTheme = 'dark' | 'light' | 'green' | 'transparent';
 type WidgetShape = 'rounded' | 'rectangular';
+type TimerDisplayMode = 'ring' | 'digital';
+type TimerFont = 'system' | 'digital';
+type SettingsTab = 'timer' | 'interface' | 'sound';
+const settingsTabs: Array<[SettingsTab, string]> = [['timer', 'Таймер'], ['interface', 'Интерфейс'], ['sound', 'Звук']];
 
 const initialSessionState: SessionState = {
   active: false,
@@ -295,6 +299,7 @@ function App() {
   const [previewingSoundId, setPreviewingSoundId] = useState('');
   const previewingRef = useRef(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('timer');
   const [aboutOpen, setAboutOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
   const [sessionTotalHours, setSessionTotalHours] = useState(0);
@@ -323,6 +328,8 @@ function App() {
     urlLabel: '',
   });
   const [timerScalePercent, setTimerScalePercent] = useState(DEFAULT_TIMER_SCALE);
+  const [timerDisplayMode, setTimerDisplayMode] = useState<TimerDisplayMode>('ring');
+  const [timerFont, setTimerFont] = useState<TimerFont>('system');
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
   const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
@@ -336,6 +343,16 @@ function App() {
     }
     return 'Таймер запущен. Сбросьте таймер, чтобы изменить настройки и сессию.';
   }, [settingsLocked, snapshot.isPaused]);
+  const handleSettingsTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: SettingsTab) => {
+    const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (!direction && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    const currentIndex = settingsTabs.findIndex(([tab]) => tab === current);
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? settingsTabs.length - 1 : (currentIndex + direction + settingsTabs.length) % settingsTabs.length;
+    const [nextTab] = settingsTabs[nextIndex];
+    setSettingsTab(nextTab);
+    document.getElementById(`settings-tab-${nextTab}`)?.focus();
+  };
   const conferenceActive = ['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(conferenceState.phase);
   const conferenceJoined = conferenceState.phase === 'joined' || conferenceState.phase === 'playing';
   const sessionBudgetSecondsValue = sessionBudgetFromHoursMinutes(sessionTotalHours, sessionTotalMinutes);
@@ -385,6 +402,8 @@ function App() {
       muteConferenceReceive: next?.muteConferenceReceive ?? muteConferenceReceive,
       conferenceCameraEnabled: next?.conferenceCameraEnabled ?? conferenceCameraEnabled,
       timerScalePercent: next?.timerScalePercent ?? timerScalePercent,
+      timerDisplayMode: next?.timerDisplayMode ?? timerDisplayMode,
+      timerFont: next?.timerFont ?? timerFont,
       widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
       widgetTheme: next?.widgetTheme ?? widgetTheme,
       widgetShape: next?.widgetShape ?? widgetShape,
@@ -398,6 +417,8 @@ function App() {
       setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
       setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? false);
       setTimerScalePercent(saved.timerScalePercent || DEFAULT_TIMER_SCALE);
+      setTimerDisplayMode((saved.timerDisplayMode as TimerDisplayMode) || 'ring');
+      setTimerFont((saved.timerFont as TimerFont) || 'system');
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
@@ -426,6 +447,8 @@ function App() {
     muteConferenceReceive,
     conferenceCameraEnabled,
     timerScalePercent,
+    timerDisplayMode,
+    timerFont,
     widgetPlacement,
     widgetTheme,
     widgetShape,
@@ -470,6 +493,8 @@ function App() {
       setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
       setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? false);
       setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
+      setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
+      setTimerFont((initialSettings.timerFont as TimerFont) || 'system');
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
@@ -1004,7 +1029,7 @@ function App() {
 
   if (widgetMode) {
     return (
-      <div className={`app-shell widget-mode ${statusClass} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}>
+      <div className={`app-shell widget-mode ${statusClass} timer-font-${timerFont} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}>
         <div
           className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
           style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
@@ -1035,7 +1060,7 @@ function App() {
 
   return (
     <div
-      className={`app-shell${sessionPanelOpen ? ' has-session-panel' : ''}`}
+      className={`app-shell timer-display-${timerDisplayMode} timer-font-${timerFont}${sessionPanelOpen ? ' has-session-panel' : ''}`}
       style={timerScaleStyle}
     >
       <header className="topbar">
@@ -1069,7 +1094,7 @@ function App() {
           >
             {icon('queue')}
           </button>
-          <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
+          <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => { setSettingsTab('timer'); setSettingsOpen(true); }}>
             {icon('settings')}
           </button>
         </div>
@@ -1413,10 +1438,41 @@ function App() {
               <button className="icon-button quiet" aria-label="Закрыть настройки" onClick={() => setSettingsOpen(false)}>{icon('close')}</button>
             </div>
 
-            {settingsLocked && <SettingsLockBanner message={settingsLockMessage} />}
+            <div className="settings-tabs" role="tablist" aria-label="Разделы настроек">
+              {settingsTabs.map(([tab, label]) => (
+                <button
+                  key={tab}
+                  id={`settings-tab-${tab}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsTab === tab}
+                  aria-controls={`settings-panel-${tab}`}
+                  tabIndex={settingsTab === tab ? 0 : -1}
+                  className={settingsTab === tab ? 'is-selected' : ''}
+                  onClick={() => setSettingsTab(tab)}
+                  onKeyDown={(event) => handleSettingsTabKeyDown(event, tab)}
+                >{label}</button>
+              ))}
+            </div>
 
-            <div className="settings-section">
+            {settingsLocked && settingsTab !== 'interface' && <SettingsLockBanner message={settingsLockMessage} />}
+
+            <div className="settings-section" id="settings-panel-interface" role="tabpanel" aria-labelledby="settings-tab-interface" hidden={settingsTab !== 'interface'}>
               <h3>Интерфейс</h3>
+              <label>
+                Вид таймера
+                <select value={timerDisplayMode} onChange={async (event) => { const next = event.target.value as TimerDisplayMode; setTimerDisplayMode(next); await persistSettings({ timerDisplayMode: next }); }}>
+                  <option value="ring">Круговой</option>
+                  <option value="digital">Цифровые часы</option>
+                </select>
+              </label>
+              <label>
+                Шрифт цифр
+                <select value={timerFont} onChange={async (event) => { const next = event.target.value as TimerFont; setTimerFont(next); await persistSettings({ timerFont: next }); }}>
+                  <option value="system">Системный</option>
+                  <option value="digital">Digital Normal</option>
+                </select>
+              </label>
               <label>
                 Размер таймера
                 <div className="digit-size-row">
@@ -1426,7 +1482,6 @@ function App() {
                     max={MAX_TIMER_SCALE}
                     step={5}
                     value={timerScalePercent}
-                    disabled={settingsLocked}
                     onChange={(event) => setTimerScalePercent(Number(event.target.value))}
                     onMouseUp={() => persistSettings()}
                     onTouchEnd={() => persistSettings()}
@@ -1435,7 +1490,7 @@ function App() {
                 </div>
               </label>
               <div className={`widget-preview-stage preview-${widgetPlacement}`}>
-                <div className={`widget-preview ${statusClass} widget-theme-${widgetTheme} widget-shape-${widgetShape}`} aria-label="Предпросмотр виджета">
+                <div className={`widget-preview ${statusClass} timer-font-${timerFont} widget-theme-${widgetTheme} widget-shape-${widgetShape}`} aria-label="Предпросмотр виджета">
                   <div className="widget-chrome">
                     <span className={`widget-primary widget-action-${widgetAction} preview-control`} aria-hidden="true">{icon(widgetAction)}</span>
                     <div className="widget-body"><span className="widget-timer">{displayTime}</span></div>
@@ -1457,7 +1512,6 @@ function App() {
                       key={value}
                       type="button"
                       className={widgetPlacement === value ? 'is-selected' : ''}
-                      disabled={settingsLocked}
                       aria-pressed={widgetPlacement === value}
                       onClick={async () => { setWidgetPlacement(value); await persistSettings({ widgetPlacement: value }); }}
                     >
@@ -1474,13 +1528,13 @@ function App() {
                   {([
                     ['dark', 'Тёмная'],
                     ['light', 'Светлая'],
-                    ['violet', 'Фиолетовая'],
+                    ['green', 'Зелёная'],
+                    ['transparent', 'Прозрачная'],
                   ] as const).map(([value, label]) => (
                     <button
                       key={value}
                       type="button"
                       className={widgetTheme === value ? 'is-selected' : ''}
-                      disabled={settingsLocked}
                       aria-pressed={widgetTheme === value}
                       onClick={async () => { setWidgetTheme(value); await persistSettings({ widgetTheme: value }); }}
                     >
@@ -1502,7 +1556,6 @@ function App() {
                       key={value}
                       type="button"
                       className={widgetShape === value ? 'is-selected' : ''}
-                      disabled={settingsLocked}
                       aria-pressed={widgetShape === value}
                       onClick={async () => { setWidgetShape(value); await persistSettings({ widgetShape: value }); }}
                     >
@@ -1515,7 +1568,7 @@ function App() {
               <p className="settings-hint">В свободном режиме виджет можно перетаскивать и изменять его размер за края окна.</p>
             </div>
 
-            <div className="settings-section">
+            <div className="settings-section" id="settings-panel-timer" role="tabpanel" aria-labelledby="settings-tab-timer" hidden={settingsTab !== 'timer'}>
               <h3>Длительность</h3>
               <label>Доклад<div className="duration-inputs">
                 <NumericInput max={180} value={talkMinutes} disabled={settingsLocked} onChange={setTalkMinutes} onBlur={() => persistSettings()} /><span>мин</span>
@@ -1531,7 +1584,7 @@ function App() {
               </div></label>
             </div>
 
-            <div className="settings-section">
+            <div className="settings-section" id="settings-panel-sound" role="tabpanel" aria-labelledby="settings-tab-sound" hidden={settingsTab !== 'sound'}>
               <h3>Звук</h3>
               <label>Сигнал окончания времени<div className="sound-picker-row">
                 <select value={soundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setSoundId(next); await persistSettings({ soundId: next }); }}>
