@@ -29,8 +29,8 @@ func main() {
 		AlwaysOnTop: true,
 		Width:       960,
 		Height:      720,
-		MinWidth:  820,
-		MinHeight: 640,
+		MinWidth:  800,
+		MinHeight: 600,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

@@ -44,3 +44,20 @@ func TestWidgetPositionFallsBackForInvalidWorkArea(t *testing.T) {
 		t.Fatalf("invalid work area must not place widget off-screen: got %d,%d", x, y)
 	}
 }
+
+func TestWidgetDimensions(t *testing.T) {
+	tests := []struct {
+		size          string
+		width, height int
+	}{
+		{settings.WidgetSizeCompact, 280, 88},
+		{settings.WidgetSizeStandard, WidgetWidth, WidgetHeight},
+		{settings.WidgetSizeLarge, 400, 120},
+	}
+	for _, tt := range tests {
+		width, height := WidgetDimensions(tt.size)
+		if width != tt.width || height != tt.height {
+			t.Fatalf("%s: got %dx%d, want %dx%d", tt.size, width, height, tt.width, tt.height)
+		}
+	}
+}

@@ -148,6 +148,9 @@ const MAX_TIMER_SCALE = 140;
 const DEFAULT_TIMER_SCALE = 115;
 
 type WidgetPlacement = 'topRight' | 'topLeft' | 'free';
+type WidgetTheme = 'dark' | 'light' | 'violet';
+type WidgetSize = 'compact' | 'standard' | 'large';
+type WidgetShape = 'rounded' | 'pill' | 'square';
 
 const initialSessionState: SessionState = {
   active: false,
@@ -322,6 +325,9 @@ function App() {
   });
   const [timerScalePercent, setTimerScalePercent] = useState(DEFAULT_TIMER_SCALE);
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
+  const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
+  const [widgetSize, setWidgetSize] = useState<WidgetSize>('standard');
+  const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
   const [widgetMode, setWidgetMode] = useState(false);
 
   const settingsLocked = snapshot.isRunning;
@@ -382,6 +388,9 @@ function App() {
       conferenceCameraEnabled: next?.conferenceCameraEnabled ?? conferenceCameraEnabled,
       timerScalePercent: next?.timerScalePercent ?? timerScalePercent,
       widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
+      widgetTheme: next?.widgetTheme ?? widgetTheme,
+      widgetSize: next?.widgetSize ?? widgetSize,
+      widgetShape: next?.widgetShape ?? widgetShape,
     });
 
     setSaving(true);
@@ -393,6 +402,9 @@ function App() {
       setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? false);
       setTimerScalePercent(saved.timerScalePercent || DEFAULT_TIMER_SCALE);
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
+      setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
+      setWidgetSize((saved.widgetSize as WidgetSize) || 'standard');
+      setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setError('');
@@ -419,6 +431,9 @@ function App() {
     conferenceCameraEnabled,
     timerScalePercent,
     widgetPlacement,
+    widgetTheme,
+    widgetSize,
+    widgetShape,
   ]);
 
   useEffect(() => {
@@ -461,6 +476,9 @@ function App() {
       setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? false);
       setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
+      setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
+      setWidgetSize((initialSettings.widgetSize as WidgetSize) || 'standard');
+      setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
       setWidgetMode(await IsWidgetMode());
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
@@ -929,17 +947,10 @@ function App() {
   const ringLength = 854.5;
 
   const timerScaleStyle = useMemo(() => {
-    const scale = timerScalePercent / 100;
+    const scaledSize = 62 * timerScalePercent / 100;
     return {
-      '--timer-ring-size': `${440 * scale}px`,
-      '--timer-ring-viewport-size': `${56 * scale}vh`,
-      '--timer-ring-min-size': `${292 * scale}px`,
-      '--timer-digit-size': `${102.4 * scale}px`,
-      '--timer-digit-fluid-size': `${10 * scale}vw`,
-      '--timer-control-size': `${54 * scale}px`,
-      '--timer-control-icon-size': `${23 * scale}px`,
-      '--timer-control-gap': `${19 * scale}px`,
-      '--timer-stage-gap': `${24 * scale}px`,
+      '--timer-size-width': `${scaledSize}cqw`,
+      '--timer-size-height': `${scaledSize}cqh`,
     } as React.CSSProperties;
   }, [timerScalePercent]);
 
@@ -992,15 +1003,27 @@ function App() {
   );
 
   if (widgetMode) {
+    const widgetIsPaused = snapshot.isRunning && snapshot.isPaused;
+    const widgetIsRunning = snapshot.isRunning && !snapshot.isPaused;
+    const widgetIsComplete = snapshot.phase === 'completed';
+    const widgetActionLabel = widgetIsRunning ? 'Поставить на паузу' : widgetIsComplete ? 'Сбросить таймер' : widgetIsPaused ? 'Продолжить' : 'Запустить';
     return (
-      <div className={`app-shell widget-mode ${statusClass}`}>
+      <div className={`app-shell widget-mode ${statusClass} widget-theme-${widgetTheme} widget-size-${widgetSize} widget-shape-${widgetShape}`}>
         <div
           className={`widget-chrome${widgetPlacement === 'free' ? ' widget-draggable' : ''}`}
           style={widgetPlacement === 'free' ? { '--wails-draggable': 'drag' } as React.CSSProperties : undefined}
         >
+          <button
+            className="widget-primary"
+            onClick={widgetIsRunning ? () => Pause() : widgetIsComplete ? handleReset : handleStart}
+            aria-label={widgetActionLabel}
+            title={widgetActionLabel}
+          >
+            {icon(widgetIsRunning ? 'pause' : widgetIsComplete ? 'reset' : 'play')}
+          </button>
           <div className="widget-body">
+            <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
             <span className="widget-phase">{phaseLabels[snapshot.phase]}</span>
-            <span className="widget-timer">{displayTime}</span>
           </div>
           <button
             className="icon-button quiet widget-restore"
@@ -1022,6 +1045,14 @@ function App() {
     >
       <header className="topbar">
         <div className="topbar-left">
+          <button
+            className="icon-button quiet widget-mode-toggle"
+            aria-label="Перейти в режим виджета"
+            title="Режим виджета"
+            onClick={handleEnterWidget}
+          >
+            {icon('widget')}
+          </button>
           {conferenceActive && (
             <button
               className={`icon-button quiet conference-browser-toggle${conferenceState.browserVisible ? ' is-visible' : ''}`}
@@ -1043,14 +1074,6 @@ function App() {
           >
             {icon('queue')}
           </button>
-          <button
-            className="icon-button quiet"
-            aria-label="Свернуть в виджет"
-            title="Свернуть в виджет"
-            onClick={handleEnterWidget}
-          >
-            {icon('widget')}
-          </button>
           <button className="icon-button quiet" aria-label="Открыть настройки" title="Настройки" onClick={() => setSettingsOpen(true)}>
             {icon('settings')}
           </button>
@@ -1069,27 +1092,29 @@ function App() {
           </button>
         </div>
 
-        <section className={`timer-ring ${statusClass}`}>
-          <svg className="progress-ring" viewBox="0 0 320 320" aria-hidden="true">
-            <circle className="ring-track" cx="160" cy="160" r="136" />
-            <circle
-              className="ring-progress"
-              cx="160"
-              cy="160"
-              r="136"
-              strokeDasharray={ringLength}
-              strokeDashoffset={ringLength * (1 - progress)}
-            />
-          </svg>
-          <div className="timer-content">
-            <span className="phase-name">{phaseLabels[snapshot.phase]}</span>
-            <span className="timer-value">{displayTime}</span>
-            <span className="timer-units">мин&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;сек</span>
-            {snapshot.phase.includes('Overtime') && (
-              <span className="timer-caption">Сигнал через {formatClock(snapshot.nextReminderIn)}</span>
-            )}
-          </div>
-        </section>
+        <div className="timer-viewport">
+          <section className={`timer-ring ${statusClass}`} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>
+            <svg className="progress-ring" viewBox="0 0 320 320" aria-hidden="true">
+              <circle className="ring-track" cx="160" cy="160" r="136" />
+              <circle
+                className="ring-progress"
+                cx="160"
+                cy="160"
+                r="136"
+                strokeDasharray={ringLength}
+                strokeDashoffset={ringLength * (1 - progress)}
+              />
+            </svg>
+            <div className="timer-content">
+              <span className="phase-name">{phaseLabels[snapshot.phase]}</span>
+              <span className="timer-value">{displayTime}</span>
+              <span className="timer-units"><span>мин</span><i aria-hidden="true" /><span>сек</span></span>
+              {snapshot.phase.includes('Overtime') && (
+                <span className="timer-caption">Сигнал через {formatClock(snapshot.nextReminderIn)}</span>
+              )}
+            </div>
+          </section>
+        </div>
 
         <nav className="controls" aria-label="Управление таймером">
           <button className="icon-button control-play" onClick={handleStart} disabled={snapshot.isRunning && !snapshot.isPaused} aria-label="Запустить" title="Запустить">
@@ -1434,6 +1459,32 @@ function App() {
                   <option value="free">Свободно</option>
                 </select>
               </label>
+              <div className="widget-style-grid">
+                <label>
+                  Цветовая схема
+                  <select value={widgetTheme} disabled={settingsLocked} onChange={async (event) => { const next = event.target.value as WidgetTheme; setWidgetTheme(next); await persistSettings({ widgetTheme: next }); }}>
+                    <option value="dark">Тёмная</option>
+                    <option value="light">Светлая</option>
+                    <option value="violet">Фиолетовая</option>
+                  </select>
+                </label>
+                <label>
+                  Размер
+                  <select value={widgetSize} disabled={settingsLocked} onChange={async (event) => { const next = event.target.value as WidgetSize; setWidgetSize(next); await persistSettings({ widgetSize: next }); }}>
+                    <option value="compact">Компактный</option>
+                    <option value="standard">Стандартный</option>
+                    <option value="large">Крупный</option>
+                  </select>
+                </label>
+                <label>
+                  Форма
+                  <select value={widgetShape} disabled={settingsLocked} onChange={async (event) => { const next = event.target.value as WidgetShape; setWidgetShape(next); await persistSettings({ widgetShape: next }); }}>
+                    <option value="rounded">Скруглённая</option>
+                    <option value="pill">Капсула</option>
+                    <option value="square">Прямоугольная</option>
+                  </select>
+                </label>
+              </div>
               <p className="settings-hint">Виджет всегда поверх остальных окон. В свободном режиме его можно перетаскивать за фон.</p>
             </div>
 

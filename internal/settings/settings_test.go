@@ -203,6 +203,35 @@ func TestWidgetPlacementRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWidgetAppearanceRoundTrip(t *testing.T) {
+	store := &Store{
+		path:     filepath.Join(t.TempDir(), "settings.json"),
+		settings: Default(),
+	}
+	input := Default()
+	input.WidgetTheme = WidgetThemeLight
+	input.WidgetSize = WidgetSizeLarge
+	input.WidgetShape = WidgetShapePill
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.WidgetTheme != WidgetThemeLight || got.WidgetSize != WidgetSizeLarge || got.WidgetShape != WidgetShapePill {
+		t.Fatalf("widget appearance not saved: %+v", got)
+	}
+}
+
+func TestNormalizeWidgetAppearance(t *testing.T) {
+	value := Default()
+	value.WidgetTheme = "invalid"
+	value.WidgetSize = "invalid"
+	value.WidgetShape = "invalid"
+	got := normalize(value, Default())
+	if got.WidgetTheme != WidgetThemeDark || got.WidgetSize != WidgetSizeStandard || got.WidgetShape != WidgetShapeRounded {
+		t.Fatalf("invalid widget appearance was not normalized: %+v", got)
+	}
+}
+
 func TestNormalizeWidgetPlacement(t *testing.T) {
 	if NormalizeWidgetPlacement("invalid") != WidgetPlacementTopRight {
 		t.Fatal("invalid placement should default to topRight")

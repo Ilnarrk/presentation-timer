@@ -226,6 +226,9 @@ export namespace settings {
 	    sessionUseDefaultQuestions: boolean;
 	    timerScalePercent: number;
 	    widgetPlacement: string;
+	    widgetTheme: string;
+	    widgetSize: string;
+	    widgetShape: string;
 	    widgetFreeX: number;
 	    widgetFreeY: number;
 	
@@ -262,6 +265,9 @@ export namespace settings {
 	        this.sessionUseDefaultQuestions = source["sessionUseDefaultQuestions"];
 	        this.timerScalePercent = source["timerScalePercent"];
 	        this.widgetPlacement = source["widgetPlacement"];
+	        this.widgetTheme = source["widgetTheme"];
+	        this.widgetSize = source["widgetSize"];
+	        this.widgetShape = source["widgetShape"];
 	        this.widgetFreeX = source["widgetFreeX"];
 	        this.widgetFreeY = source["widgetFreeY"];
 	    }
@@ -343,4 +349,3 @@ export namespace timer {
 	}
 
 }
-

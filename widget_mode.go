@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	normalWindowMinWidth  = 820
-	normalWindowMinHeight = 640
+	normalWindowMinWidth  = 800
+	normalWindowMinHeight = 600
 )
 
 type windowBounds struct {
@@ -42,11 +42,12 @@ func (a *App) EnterWidgetMode() error {
 		a.normalBounds.w,
 		a.normalBounds.h,
 	)
-	wx, wy := windowmode.WidgetPosition(work, s.WidgetPlacement, s.WidgetFreeX, s.WidgetFreeY)
+	widgetWidth, widgetHeight := windowmode.WidgetDimensions(s.WidgetSize)
+	wx, wy := windowmode.WidgetPositionForSize(work, s.WidgetPlacement, s.WidgetFreeX, s.WidgetFreeY, widgetWidth, widgetHeight)
 
 	windowmode.SetFrameless(hwnd, true)
-	runtime.WindowSetMinSize(a.ctx, windowmode.WidgetWidth, windowmode.WidgetHeight)
-	runtime.WindowSetSize(a.ctx, windowmode.WidgetWidth, windowmode.WidgetHeight)
+	runtime.WindowSetMinSize(a.ctx, widgetWidth, widgetHeight)
+	runtime.WindowSetSize(a.ctx, widgetWidth, widgetHeight)
 	runtime.WindowSetPosition(a.ctx, wx, wy)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.widgetMode = true

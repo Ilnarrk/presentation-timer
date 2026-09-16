@@ -36,6 +36,9 @@ type Settings struct {
 	SessionUseDefaultQuestions bool     `json:"sessionUseDefaultQuestions"`
 	TimerScalePercent          int      `json:"timerScalePercent"`
 	WidgetPlacement            string   `json:"widgetPlacement"`
+	WidgetTheme                string   `json:"widgetTheme"`
+	WidgetSize                 string   `json:"widgetSize"`
+	WidgetShape                string   `json:"widgetShape"`
 	WidgetFreeX                int      `json:"widgetFreeX"`
 	WidgetFreeY                int      `json:"widgetFreeY"`
 }
@@ -48,6 +51,15 @@ const (
 	WidgetPlacementTopRight = "topRight"
 	WidgetPlacementTopLeft  = "topLeft"
 	WidgetPlacementFree     = "free"
+	WidgetThemeDark         = "dark"
+	WidgetThemeLight        = "light"
+	WidgetThemeViolet       = "violet"
+	WidgetSizeCompact       = "compact"
+	WidgetSizeStandard      = "standard"
+	WidgetSizeLarge         = "large"
+	WidgetShapeRounded      = "rounded"
+	WidgetShapePill         = "pill"
+	WidgetShapeSquare       = "square"
 )
 
 func NormalizeWidgetPlacement(placement string) string {
@@ -80,6 +92,9 @@ func Default() Settings {
 		SessionUseDefaultQuestions: true,
 		TimerScalePercent:          DefaultTimerScalePercent,
 		WidgetPlacement:            WidgetPlacementTopRight,
+		WidgetTheme:                WidgetThemeDark,
+		WidgetSize:                 WidgetSizeStandard,
+		WidgetShape:                WidgetShapeRounded,
 		WidgetFreeX:                0,
 		WidgetFreeY:                0,
 	}
@@ -254,6 +269,21 @@ func normalize(value, fallback Settings) Settings {
 		} else {
 			value.WidgetPlacement = WidgetPlacementTopRight
 		}
+	}
+	switch value.WidgetTheme {
+	case WidgetThemeLight, WidgetThemeViolet:
+	default:
+		value.WidgetTheme = WidgetThemeDark
+	}
+	switch value.WidgetSize {
+	case WidgetSizeCompact, WidgetSizeLarge:
+	default:
+		value.WidgetSize = WidgetSizeStandard
+	}
+	switch value.WidgetShape {
+	case WidgetShapePill, WidgetShapeSquare:
+	default:
+		value.WidgetShape = WidgetShapeRounded
 	}
 	return value
 }

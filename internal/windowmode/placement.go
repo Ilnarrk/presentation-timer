@@ -3,10 +3,21 @@ package windowmode
 import "timer/internal/settings"
 
 const (
-	WidgetWidth  = 320
-	WidgetHeight = 150
+	WidgetWidth  = 340
+	WidgetHeight = 104
 	WidgetMargin = 12
 )
+
+func WidgetDimensions(size string) (int, int) {
+	switch size {
+	case settings.WidgetSizeCompact:
+		return 280, 88
+	case settings.WidgetSizeLarge:
+		return 400, 120
+	default:
+		return WidgetWidth, WidgetHeight
+	}
+}
 
 type WorkArea struct {
 	Left   int
@@ -16,22 +27,25 @@ type WorkArea struct {
 }
 
 func WidgetPosition(workArea WorkArea, placement string, freeX, freeY int) (int, int) {
-	if workArea.Right-workArea.Left < WidgetWidth || workArea.Bottom-workArea.Top < WidgetHeight {
+	return WidgetPositionForSize(workArea, placement, freeX, freeY, WidgetWidth, WidgetHeight)
+}
+
+func WidgetPositionForSize(workArea WorkArea, placement string, freeX, freeY, width, height int) (int, int) {
+	if workArea.Right-workArea.Left < width || workArea.Bottom-workArea.Top < height {
 		workArea = WorkArea{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
 	}
-	w, h := WidgetWidth, WidgetHeight
 	switch settings.NormalizeWidgetPlacement(placement) {
 	case settings.WidgetPlacementTopLeft:
 		return workArea.Left + WidgetMargin, workArea.Top + WidgetMargin
 	case settings.WidgetPlacementFree:
 		x, y := freeX, freeY
 		if x == 0 && y == 0 {
-			x = workArea.Right - w - WidgetMargin
+			x = workArea.Right - width - WidgetMargin
 			y = workArea.Top + WidgetMargin
 		}
-		return ClampPosition(workArea, w, h, x, y)
+		return ClampPosition(workArea, width, height, x, y)
 	default:
-		return workArea.Right - w - WidgetMargin, workArea.Top + WidgetMargin
+		return workArea.Right - width - WidgetMargin, workArea.Top + WidgetMargin
 	}
 }
 
