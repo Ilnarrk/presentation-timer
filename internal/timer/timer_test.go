@@ -62,6 +62,9 @@ func TestOvertimeRepeatsEveryTwoMinutes(t *testing.T) {
 	if len(alerts) != 2 || !alerts[1].Repeated {
 		t.Fatalf("expected repeated alert, got %+v", alerts)
 	}
+	if got := engine.Snapshot().OvertimeSeconds; got != 120 {
+		t.Fatalf("overtime counter reset after reminder: got %d seconds", got)
+	}
 }
 
 func TestOvertimeUsesConfiguredReminderInterval(t *testing.T) {

@@ -647,7 +647,6 @@ button {
   cursor: default;
 }
 
-.alert-chip,
 .error-toast,
 .success-toast {
   position: fixed;
@@ -656,13 +655,6 @@ button {
   padding: 9px 14px;
   border-radius: 999px;
   font-size: 0.76rem;
-}
-
-.alert-chip {
-  border: 1px solid rgba(255, 101, 118, 0.24);
-  background: rgba(255, 101, 118, 0.12);
-  color: #ff9da7;
-  cursor: pointer;
 }
 
 .error-toast {
@@ -2001,8 +1993,8 @@ body {
 
 .icon-button:focus-visible,
 .conference-badge:focus-visible,
-.alert-chip:focus-visible,
-.widget-primary:focus-visible {
+.widget-primary:focus-visible,
+.widget-secondary:focus-visible {
   outline: 2px solid #b8d8ff;
   outline-offset: 3px;
 }
@@ -2062,7 +2054,7 @@ body {
 
 .widget-chrome {
   position: relative;
-  grid-template-columns: var(--widget-control-size) minmax(0, 1fr) var(--widget-control-size);
+  grid-template-columns: var(--widget-control-size) minmax(0, 1fr) auto;
   gap: clamp(8px, 3cqw, 18px);
   padding: clamp(8px, 6cqh, 14px) clamp(10px, 4cqw, 18px);
   border: 0;
@@ -2070,11 +2062,6 @@ body {
   background: var(--widget-surface);
   box-shadow: none;
   transition: border-radius 180ms ease;
-}
-
-.widget-chrome::after {
-  content: "";
-  width: var(--widget-control-size);
 }
 
 .widget-body {
@@ -2104,13 +2091,13 @@ body {
   width: var(--widget-control-size);
   height: var(--widget-control-size);
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--widget-action) 88%, white 12%);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--widget-action) 44%, transparent);
-  color: color-mix(in srgb, var(--widget-action) 62%, white 38%);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--widget-action);
   cursor: pointer;
-  box-shadow: 0 5px 18px color-mix(in srgb, var(--widget-action) 18%, transparent);
-  transition: transform 150ms ease, background 150ms ease;
+  box-shadow: none;
+  transition: opacity 150ms ease;
 }
 
 .widget-primary.widget-action-play {
@@ -2119,10 +2106,12 @@ body {
 
 .widget-primary:hover {
   transform: none;
-  background: color-mix(in srgb, var(--widget-action) 52%, transparent);
+  background: transparent;
+  opacity: 0.76;
 }
 
 .widget-primary svg,
+.widget-secondary svg,
 .preview-restore svg {
   width: 46%;
   height: 46%;
@@ -2135,9 +2124,41 @@ body {
 
 .widget-primary svg path[d^="M9 6.8"],
 .widget-primary svg path[d^="M8 6.5"],
-.widget-primary svg path[d^="M14 6.5"] {
+.widget-primary svg path[d^="M14 6.5"],
+.widget-secondary svg path[d^="m7 6"] {
   fill: currentColor;
   stroke: none;
+}
+
+.widget-actions {
+  display: flex;
+  align-items: center;
+  gap: clamp(2px, 1cqw, 8px);
+  margin-right: calc(var(--widget-restore-size) + 4px);
+}
+
+.widget-secondary {
+  --wails-draggable: no-drag;
+  display: grid;
+  width: calc(var(--widget-control-size) * 0.72);
+  height: var(--widget-control-size);
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--widget-state);
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.widget-secondary:hover:not(:disabled) {
+  opacity: 0.76;
+}
+
+.widget-secondary:disabled {
+  cursor: default;
+  opacity: 0.28;
 }
 
 .widget-restore,
@@ -2172,7 +2193,7 @@ body {
 .widget-mode.status-alert .widget-chrome,
 .widget-preview.status-overtime .widget-chrome,
 .widget-preview.status-alert .widget-chrome {
-  box-shadow: var(--shadow-widget), 0 0 18px rgba(255, 75, 94, 0.14);
+  box-shadow: none;
 }
 
 .app-shell.widget-mode.widget-theme-light,
@@ -2218,7 +2239,18 @@ body {
 .widget-preview.widget-theme-transparent {
   --widget-surface: transparent;
   --widget-text: #f8fbff;
-  --widget-muted: rgba(248, 251, 255, 0.72);
+  --widget-muted: #f8fbff;
+  --widget-restore-color: #f8fbff;
+}
+
+.widget-theme-transparent .widget-restore,
+.widget-theme-transparent .widget-primary {
+  opacity: 1;
+}
+
+.widget-theme-transparent .widget-secondary:not(:disabled),
+.widget-theme-transparent .widget-secondary:hover:not(:disabled) {
+  opacity: 1;
 }
 
 html:has(.widget-mode),

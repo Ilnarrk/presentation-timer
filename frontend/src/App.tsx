@@ -5,7 +5,6 @@ import {
   ConnectConference,
   CreateSession,
   EndSession,
-  DismissAlert,
   DeleteSessionTemplate,
   DisconnectConference,
   EnterWidgetMode,
@@ -635,10 +634,6 @@ function App() {
     setConfirmDialog(null);
   };
 
-  const handleDismissAlert = () => {
-    DismissAlert();
-  };
-
   const handleCreateSession = async () => {
     if (!canCreateSession || sessionBusy || settingsLocked) return;
     if (sessionState.active && !await askConfirm('Заменить текущую сессию?', 'Накопленное время будет сброшено.')) {
@@ -1023,9 +1018,8 @@ function App() {
 
   const widgetIsPaused = snapshot.isRunning && snapshot.isPaused;
   const widgetIsRunning = snapshot.isRunning && !snapshot.isPaused;
-  const widgetIsComplete = snapshot.phase === 'completed';
-  const widgetActionLabel = widgetIsRunning ? 'Поставить на паузу' : widgetIsComplete ? 'Сбросить таймер' : widgetIsPaused ? 'Продолжить' : 'Запустить';
-  const widgetAction = widgetIsRunning ? 'pause' : widgetIsComplete ? 'reset' : 'play';
+  const widgetActionLabel = widgetIsRunning ? 'Поставить на паузу' : widgetIsPaused ? 'Продолжить' : 'Запустить';
+  const widgetAction = widgetIsRunning ? 'pause' : 'play';
 
   if (widgetMode) {
     return (
@@ -1036,7 +1030,7 @@ function App() {
         >
           <button
             className={`widget-primary widget-action-${widgetAction}`}
-            onClick={widgetIsRunning ? () => Pause() : widgetIsComplete ? handleReset : handleStart}
+            onClick={widgetIsRunning ? () => Pause() : handleStart}
             aria-label={widgetActionLabel}
             title={widgetActionLabel}
           >
@@ -1044,6 +1038,14 @@ function App() {
           </button>
           <div className="widget-body">
             <span className="widget-timer" aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
+          </div>
+          <div className="widget-actions" aria-label="Переходы таймера">
+            <button className="widget-secondary" onClick={handleGoToQuestions} disabled={snapshot.phase !== 'talk' && snapshot.phase !== 'talkOvertime'} aria-label="Перейти к вопросам" title="К вопросам">
+              {icon('questions')}
+            </button>
+            <button className="widget-secondary" onClick={handleNextSpeaker} disabled={!['talk', 'talkOvertime', 'questions', 'questionsOvertime'].includes(snapshot.phase)} aria-label="Следующий докладчик" title="Следующий докладчик">
+              {icon('next')}
+            </button>
           </div>
           <button
             className="icon-button quiet widget-restore"
@@ -1143,11 +1145,6 @@ function App() {
           </button>
         </nav>
 
-        {snapshot.alertActive && (
-          <button className="alert-chip" onClick={handleDismissAlert}>
-            Время вышло · закрыть уведомление
-          </button>
-        )}
         {error && <div className="error-toast">{error}</div>}
         {successMessage && <div className="success-toast">{successMessage}</div>}
       </main>

@@ -175,12 +175,23 @@ func SetWidgetBorderHidden(hwnd uintptr, hidden bool) {
 		return
 	}
 	const dwmwaBorderColor = 34
+	const dwmwaNcRenderingPolicy = 2
 	const dwmwaColorNone uint32 = 0xFFFFFFFE
 	const dwmwaColorDefault uint32 = 0xFFFFFFFF
+	const dwmNCRenderingUseWindowStyle uint32 = 0
+	const dwmNCRenderingDisabled uint32 = 1
 	color := dwmwaColorDefault
+	ncRendering := dwmNCRenderingUseWindowStyle
 	if hidden {
 		color = dwmwaColorNone
+		ncRendering = dwmNCRenderingDisabled
 	}
+	procDwmSetWindowAttribute.Call(
+		hwnd,
+		uintptr(dwmwaNcRenderingPolicy),
+		uintptr(unsafe.Pointer(&ncRendering)),
+		unsafe.Sizeof(ncRendering),
+	)
 	procDwmSetWindowAttribute.Call(
 		hwnd,
 		uintptr(dwmwaBorderColor),

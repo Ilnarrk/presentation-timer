@@ -52,6 +52,7 @@ type Engine struct {
 	isPaused      bool
 	deadline      time.Time
 	pausedLeft    time.Duration
+	overtimeStartedAt time.Time
 	lastAlertAt   time.Time
 	alertActive   bool
 	reminderDueAt time.Time
@@ -130,6 +131,7 @@ func (e *Engine) Start() error {
 	e.isPaused = false
 	e.deadline = e.clock.Now().Add(e.cfg.TalkDuration)
 	e.lastAlertAt = time.Time{}
+	e.overtimeStartedAt = time.Time{}
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -169,6 +171,7 @@ func (e *Engine) Reset() {
 	e.deadline = time.Time{}
 	e.pausedLeft = 0
 	e.lastAlertAt = time.Time{}
+	e.overtimeStartedAt = time.Time{}
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.stopTickerLocked()
@@ -191,6 +194,7 @@ func (e *Engine) GoToQuestions() error {
 	e.isPaused = false
 	e.deadline = e.clock.Now().Add(e.cfg.QuestionsDuration)
 	e.lastAlertAt = time.Time{}
+	e.overtimeStartedAt = time.Time{}
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -215,6 +219,7 @@ func (e *Engine) NextSpeaker() error {
 	e.isPaused = false
 	e.deadline = e.clock.Now().Add(e.cfg.TalkDuration)
 	e.lastAlertAt = time.Time{}
+	e.overtimeStartedAt = time.Time{}
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -271,6 +276,7 @@ func (e *Engine) evaluateLocked() {
 
 func (e *Engine) enterOvertimeLocked(overtime Phase, now time.Time) {
 	e.phase = overtime
+	e.overtimeStartedAt = now
 	e.fireAlertLocked(now, false)
 }
 
@@ -337,10 +343,10 @@ func (e *Engine) computeTimesLocked() (remaining int, overtime int) {
 
 	now := e.clock.Now()
 	if e.isOvertimePhaseLocked() {
-		if e.lastAlertAt.IsZero() {
+		if e.overtimeStartedAt.IsZero() {
 			return 0, 0
 		}
-		elapsed := now.Sub(e.lastAlertAt)
+		elapsed := now.Sub(e.overtimeStartedAt)
 		if elapsed < 0 {
 			elapsed = 0
 		}
