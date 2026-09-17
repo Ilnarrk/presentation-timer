@@ -658,10 +658,10 @@ function App() {
       return formatOvertime(snapshot.overtimeSeconds);
     }
     if (snapshot.phase === 'idle') {
-      return formatClock(talkMinutes * 60 + talkSecondsPart);
+      return formatClock(snapshot.talkSeconds);
     }
     return formatClock(snapshot.remainingSeconds);
-  }, [snapshot, talkMinutes, talkSecondsPart]);
+  }, [snapshot]);
 
   const statusClass = useMemo(() => {
     if (snapshot.alertActive) return 'status-alert';
@@ -723,6 +723,13 @@ function App() {
     setWidgetDurationInvalid(false);
     void SetWidgetQuickTimeOpen(false);
   };
+  const toggleWidgetDuration = async () => {
+    if (widgetDurationOpen) {
+      closeWidgetDuration();
+      return;
+    }
+    await openWidgetDuration();
+  };
   const applyWidgetDuration = async (value: string | number = widgetDurationDraft, keepOpen = false) => {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < MIN_WIDGET_DURATION || parsed > MAX_WIDGET_DURATION) {
@@ -731,14 +738,17 @@ function App() {
     }
     try {
       await SetTalkDurationOverride(parsed);
+      setTalkMinutes(parsed);
+      setTalkSecondsPart(0);
       setWidgetDurationDraft(String(parsed));
+      setWidgetDurationInvalid(false);
+      await persistSettings({ talkMinutes: parsed, talkSeconds: 0 });
       if (!keepOpen) closeWidgetDuration();
       setError('');
     } catch (err) {
       setError(String(err));
     }
   };
-
   const askConfirm = useCallback((title: string, message: string) => new Promise<boolean>((resolve) => {
     confirmResolveRef.current = resolve;
     setConfirmDialog({ title, message });
@@ -1129,7 +1139,7 @@ function App() {
     active: settingsOpen && settingsTab === 'interface',
   });
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -1149,6 +1159,7 @@ function App() {
       restore: <><rect x="6.5" y="6.5" width="12" height="12" rx="1.8" /><path d="M9.5 6.5v-.7A1.8 1.8 0 0 1 11.3 4h6.9A1.8 1.8 0 0 1 20 5.8v6.9a1.8 1.8 0 0 1-1.5 1.8" /></>,
       clock: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
       edit: <><path d="m5 16-.8 4 4-.8L19 8.4a2.1 2.1 0 0 0-3-3L5 16Z" /><path d="m14.5 7.5 3 3" /></>,
+      check: <path d="m6.5 12.5 4 4 8.5-8.5" />,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -1183,11 +1194,12 @@ function App() {
   const widgetIsRunning = snapshot.isRunning && !snapshot.isPaused;
   const widgetActionLabel = widgetIsRunning ? 'Поставить на паузу' : widgetIsPaused ? 'Продолжить' : 'Запустить';
   const widgetAction = widgetIsRunning ? 'pause' : 'play';
+  const widgetBgTranslucentClass = widgetBackgroundTransparency > 0 && widgetTheme !== 'transparent' ? 'widget-bg-translucent' : '';
 
   if (widgetMode) {
     return (
       <div
-        className={`app-shell widget-mode ${statusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
+        className={`app-shell widget-mode ${statusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape} ${widgetBgTranslucentClass}`}
         style={{ ...widgetColorStyle, ...widgetTransparencyStyle, ...shellFontStyle }}
       >
         <div className="widget-stack" ref={widgetDurationRef}>
@@ -1217,13 +1229,13 @@ function App() {
               <button
                 className="widget-duration-trigger"
                 type="button"
-                onClick={openWidgetDuration}
-                disabled={!widgetIsPaused}
+                onClick={() => void toggleWidgetDuration()}
+                disabled={widgetIsRunning}
                 aria-expanded={widgetDurationOpen}
                 aria-controls="quick-time-panel"
                 aria-label={`Время следующего докладчика: ${widgetDurationMinutes} минут`}
               >
-                <span>{widgetDurationMinutes} мин</span><i aria-hidden="true" />
+                <span className="widget-duration-mark" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1256,30 +1268,34 @@ function App() {
                 ))}
                 {!widgetDurationCustomOpen ? (
                   <button type="button" className={`quick-time-preset quick-time-custom-trigger${![5, 10, 15, 20].includes(widgetDurationMinutes) ? ' is-selected' : ''}`} onClick={() => setWidgetDurationCustomOpen(true)}>
-                    <strong>{![5, 10, 15, 20].includes(widgetDurationMinutes) ? widgetDurationMinutes : ''}</strong><span>{![5, 10, 15, 20].includes(widgetDurationMinutes) ? 'мин' : 'Своё время'}</span>
+                    {![5, 10, 15, 20].includes(widgetDurationMinutes) ? (
+                      <><strong>{widgetDurationMinutes}</strong><span>мин</span></>
+                    ) : (
+                      <span>Своё время</span>
+                    )}
                   </button>
                 ) : (
                   <form className="quick-time-preset quick-time-custom" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
                     <input
                       ref={widgetDurationInputRef}
                       id="widget-duration-minutes"
-                      type="number"
-                      min="1"
-                      max={MAX_WIDGET_DURATION}
-                      step="1"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       value={widgetDurationDraft}
                       aria-invalid={widgetDurationInvalid}
                       onChange={(event) => {
                         const next = event.target.value.replace(/\D/g, '').slice(0, 3);
                         setWidgetDurationDraft(next);
                         const parsed = Number(next);
-                        const valid = Number.isInteger(parsed) && parsed >= MIN_WIDGET_DURATION && parsed <= MAX_WIDGET_DURATION;
+                        const valid = next === '' || (Number.isInteger(parsed) && parsed >= MIN_WIDGET_DURATION && parsed <= MAX_WIDGET_DURATION);
                         setWidgetDurationInvalid(next !== '' && !valid);
-                        if (valid) void applyWidgetDuration(next, true);
                       }}
                       autoFocus
                     />
-                    <span>мин</span>
+                    <button type="submit" className="quick-time-confirm" aria-label="Применить время">
+                      {icon('check')}
+                    </button>
                     {widgetDurationInvalid && <span className="quick-time-error">{MIN_WIDGET_DURATION}–{MAX_WIDGET_DURATION}</span>}
                   </form>
                 )}
@@ -1773,7 +1789,7 @@ function App() {
 
               <div className={`widget-preview-stage preview-${widgetPlacement}`}>
                 <div
-                  className={`widget-preview ${widgetPreviewStatusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
+                  className={`widget-preview ${widgetPreviewStatusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape} ${widgetBgTranslucentClass}`}
                   style={{ ...widgetColorStyle, ...widgetTransparencyStyle, ...shellFontStyle }}
                   aria-label="Предпросмотр виджета"
                 >

@@ -67,7 +67,8 @@ func (a *App) EnterWidgetMode() error {
 	wx, wy := windowmode.WidgetPositionForSize(work, s.WidgetPlacement, s.WidgetFreeX, s.WidgetFreeY, widgetWidth, widgetHeight)
 
 	windowmode.SetFrameless(hwnd, true, freePlacement)
-	windowmode.SetRoundedCorners(hwnd, s.WidgetShape != settings.WidgetShapeRectangular)
+	// CSS border-radius handles widget shape; DWM rounding causes a double border.
+	windowmode.SetRoundedCorners(hwnd, false)
 	windowmode.SetWidgetBorderHidden(hwnd, true)
 	if freePlacement {
 		runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)

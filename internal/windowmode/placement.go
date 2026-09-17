@@ -71,7 +71,7 @@ func FromWailsPosition(work WorkArea, relX, relY int) (int, int) {
 }
 
 // QuickTimePanelHeight is the native window height added when the widget duration panel opens.
-const QuickTimePanelHeight = 144
+const QuickTimePanelHeight = 112
 
 // QuickTimePanelPosition returns absolute x,y after expanding the widget height for the panel.
 func QuickTimePanelPosition(work WorkArea, x, y, width, height int) (int, int, int) {

@@ -83,8 +83,8 @@ func TestQuickTimePanelPositionKeepsWidgetOnScreen(t *testing.T) {
 	width, height := 400, 120
 
 	x, y, targetHeight := QuickTimePanelPosition(work, x, y, width, height)
-	if targetHeight != 264 {
-		t.Fatalf("target height: got %d want 264", targetHeight)
+	if targetHeight != 232 {
+		t.Fatalf("target height: got %d want 232", targetHeight)
 	}
 	if y+targetHeight > work.Bottom {
 		t.Fatalf("panel extends below work area: y=%d height=%d bottom=%d", y, targetHeight, work.Bottom)
