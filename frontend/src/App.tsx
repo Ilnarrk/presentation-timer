@@ -47,6 +47,20 @@ import {
   WindowSetLightTheme,
 } from '../wailsjs/runtime/runtime';
 import { buildinfo, session, settings, templates, timer } from '../wailsjs/go/models';
+import { ConferenceWizard } from './ConferenceWizard';
+import {
+  conferencePhaseLabels,
+  initialConferenceState,
+  isConferenceActive,
+  isConferenceConnecting,
+  isConferenceJoined,
+  loadRecentConferences,
+  rememberConferenceConnection,
+  wizardStepForOpen,
+  type ConferenceState,
+  type ConferenceWizardStep,
+  type RecentConference,
+} from './conference';
 import { TIMER_FONT_OPTIONS, timerFontClass, timerFontStyle } from './timerFonts';
 import {
   buildWidgetColorStyle,
@@ -105,39 +119,6 @@ interface SoundOption {
   label: string;
   source?: string;
 }
-
-interface ConferenceState {
-  phase: 'idle' | 'opening' | 'connecting' | 'waitingAdmission' | 'joined' | 'playing' | 'left' | 'error';
-  platform: string;
-  displayUrl: string;
-  message: string;
-  tested: boolean;
-  browserVisible: boolean;
-  cameraEnabled: boolean;
-  updatedAt: number;
-}
-
-const initialConferenceState: ConferenceState = {
-  phase: 'idle',
-  platform: '',
-  displayUrl: '',
-  message: 'Участник не подключён',
-  tested: false,
-  browserVisible: false,
-  cameraEnabled: false,
-  updatedAt: 0,
-};
-
-const conferencePhaseLabels: Record<ConferenceState['phase'], string> = {
-  idle: 'Не подключён',
-  opening: 'Открытие браузера',
-  connecting: 'Подключение к встрече',
-  waitingAdmission: 'Ожидает допуска',
-  joined: 'Подключён',
-  playing: 'Передаёт звук',
-  left: 'Отключён',
-  error: 'Ошибка',
-};
 
 const phaseLabels: Record<Phase, string> = {
   idle: 'Ожидание',
@@ -488,6 +469,11 @@ function App() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('timer');
   const [aboutOpen, setAboutOpen] = useState(false);
   const [connectionPromptOpen, setConnectionPromptOpen] = useState(false);
+  const [conferenceWizardStep, setConferenceWizardStep] = useState<ConferenceWizardStep>(1);
+  const [conferenceTesting, setConferenceTesting] = useState(false);
+  const [recentConferences, setRecentConferences] = useState<RecentConference[]>([]);
+  const [conferenceSetupEditing, setConferenceSetupEditing] = useState(false);
+  const connectionPromptOpenRef = useRef(connectionPromptOpen);
   const [sessionTotalHours, setSessionTotalHours] = useState(0);
   const [sessionTotalMinutes, setSessionTotalMinutes] = useState(0);
   const [sessionSpeakerCount, setSessionSpeakerCount] = useState(0);
@@ -550,8 +536,7 @@ function App() {
     setSettingsTab(nextTab);
     document.getElementById(`settings-tab-${nextTab}`)?.focus();
   };
-  const conferenceActive = ['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(conferenceState.phase);
-  const conferenceJoined = conferenceState.phase === 'joined' || conferenceState.phase === 'playing';
+  const conferenceActive = isConferenceActive(conferenceState.phase);
   const sessionBudgetSecondsValue = sessionBudgetFromHoursMinutes(sessionTotalHours, sessionTotalMinutes);
   const canCreateSession = sessionBudgetSecondsValue > 0 && sessionSpeakerCount >= 1;
 
@@ -736,7 +721,9 @@ function App() {
       setWidgetMode(await IsWidgetMode());
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
-      setConferenceState(initialConference as ConferenceState);
+      const conference = initialConference as ConferenceState;
+      setConferenceState(conference);
+      setRecentConferences(loadRecentConferences());
       setAppInfo(buildinfo.Info.createFrom(initialAppInfo));
       const template = session.Template.createFrom(initialSessionTemplate);
       const fields = applySessionTemplateFields(template);
@@ -751,8 +738,11 @@ function App() {
       setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
       setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
       setSessionState(initialSessionState as SessionState);
-      if (!['opening', 'connecting', 'waitingAdmission', 'joined', 'playing'].includes(initialConference.phase)) {
+      if (!isConferenceActive(conference.phase)) {
+        setConferenceWizardStep(1);
         setConnectionPromptOpen(true);
+      } else {
+        setConferenceWizardStep(wizardStepForOpen(conference.phase));
       }
     };
 
@@ -838,7 +828,16 @@ function App() {
   }, []);
 
   useEffect(() => {
+    connectionPromptOpenRef.current = connectionPromptOpen;
+  }, [connectionPromptOpen]);
+
+  useEffect(() => {
     const unsubscribeError = EventsOn('audio:error', (message: string) => {
+      if (message.toLowerCase().includes('context canceled')) return;
+      if (connectionPromptOpenRef.current) {
+        setConferenceError(formatAppError(message));
+        return;
+      }
       setSettingsError(formatAppError(message));
       setSettingsTab('sound');
       setSettingsOpen(true);
@@ -852,7 +851,7 @@ function App() {
   const clearWidgetDurationError = useCallback(() => setWidgetDurationError(''), []);
   useTimedMessage(settingsError, clearSettingsError);
   useTimedMessage(sessionError, clearSessionError);
-  useTimedMessage(conferenceError, clearConferenceError);
+  useTimedMessage(connectionPromptOpen ? '' : conferenceError, clearConferenceError);
   useTimedMessage(widgetDurationError, clearWidgetDurationError);
 
   useEffect(() => {
@@ -866,6 +865,25 @@ function App() {
   useEffect(() => {
     if (!connectionPromptOpen) setConferenceError('');
   }, [connectionPromptOpen]);
+
+  const openConferenceWizard = useCallback(() => {
+    if (isConferenceJoined(conferenceState.phase)) {
+      setConferenceWizardStep(3);
+    } else {
+      setConferenceWizardStep(1);
+    }
+    setConnectionPromptOpen(true);
+  }, [conferenceState.phase]);
+
+  useEffect(() => {
+    if (!connectionPromptOpen) return;
+    if (isConferenceJoined(conferenceState.phase) && conferenceWizardStep === 1) {
+      setConferenceWizardStep(2);
+    }
+    if (!isConferenceJoined(conferenceState.phase) && !isConferenceConnecting(conferenceState.phase) && conferenceWizardStep !== 1) {
+      setConferenceWizardStep(1);
+    }
+  }, [conferenceState.phase, connectionPromptOpen, conferenceWizardStep]);
 
   useEffect(() => {
     if (!successMessage) return undefined;
@@ -1200,11 +1218,21 @@ function App() {
     }
     setConferenceBusy(true);
     try {
-      const state = await ConnectConference(conferenceUrl.trim(), conferenceName.trim());
+      const rawUrl = conferenceUrl.trim();
+      const state = await ConnectConference(rawUrl, conferenceName.trim());
       setConferenceState(state as ConferenceState);
+      setConferenceWizardStep(1);
       setConnectionPromptOpen(true);
       setConferenceError('');
+      setConferenceSetupEditing(false);
+      setRecentConferences(rememberConferenceConnection(
+        rawUrl,
+        (state as ConferenceState).platform || conferenceName.trim(),
+      ));
     } catch (err) {
+      setConferenceWizardStep(1);
+      setConnectionPromptOpen(true);
+      setConferenceSetupEditing(false);
       setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
@@ -1217,6 +1245,8 @@ function App() {
       await DisconnectConference();
       const state = await GetConferenceState();
       setConferenceState(state as ConferenceState);
+      setConferenceWizardStep(1);
+      setConferenceSetupEditing(false);
       setConferenceError('');
     } catch (err) {
       setConferenceError(formatAppError(err));
@@ -1244,14 +1274,18 @@ function App() {
   };
 
   const handleConferenceTest = async () => {
+    if (conferenceBusy || conferenceTesting) return;
     setConferenceBusy(true);
+    setConferenceTesting(true);
     try {
-      await persistSettings();
       await TestConferenceSound(soundId);
+      const state = await GetConferenceState();
+      setConferenceState(state as ConferenceState);
       setConferenceError('');
     } catch (err) {
       setConferenceError(formatAppError(err));
     } finally {
+      setConferenceTesting(false);
       setConferenceBusy(false);
     }
   };
@@ -1414,32 +1448,6 @@ function App() {
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
-
-  const connectionForm = (
-    <>
-      <label>
-        Ссылка на встречу
-        <input
-          type="url"
-          placeholder="https://..."
-          value={conferenceUrl}
-          disabled={conferenceActive}
-          onChange={(event) => setConferenceUrl(event.target.value)}
-          autoFocus
-        />
-      </label>
-      <label>
-        Имя участника
-        <input
-          type="text"
-          maxLength={80}
-          value={conferenceName}
-          disabled={conferenceActive}
-          onChange={(event) => setConferenceName(event.target.value)}
-        />
-      </label>
-    </>
-  );
 
   const widgetIsPaused = snapshot.isRunning && snapshot.isPaused;
   const widgetIsRunning = snapshot.isRunning && !snapshot.isPaused;
@@ -1852,7 +1860,7 @@ function App() {
       <footer className="app-footer-bar">
         <button
           className={`conference-badge conference-${conferenceState.phase}`}
-          onClick={() => setConnectionPromptOpen(true)}
+          onClick={openConferenceWizard}
           title="Настроить подключение к ВКС"
         >
           <span className="connection-dot" />
@@ -1861,83 +1869,38 @@ function App() {
       </footer>
 
       {connectionPromptOpen && (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal connection-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
-            <button className="icon-button quiet close-button" aria-label="Закрыть" onClick={() => setConnectionPromptOpen(false)}>
-              {icon('close')}
-            </button>
-            <span className="modal-kicker">ВКС</span>
-            <h2 id="connection-title">Подключение к ВКС</h2>
-            <p className="modal-copy">{conferenceState.message}</p>
-            {conferenceError && <PanelError message={conferenceError} />}
-            {!conferenceActive && connectionForm}
-            <label className="settings-checkbox conference-camera-toggle">
-              <input
-                type="checkbox"
-                checked={conferenceCameraEnabled}
-                disabled={conferenceBusy}
-                onChange={(event) => handleConferenceCameraToggle(event.target.checked)}
-              />
-              <span>Показывать отсчёт в камере</span>
-            </label>
-            
-            <div className="connection-footer">
-              <div className={`modal-actions${conferenceActive ? ' conference-active-actions' : ''}`}>
-                {!conferenceActive ? (
-                  <>
-                    <button className="text-button secondary" onClick={() => setConnectionPromptOpen(false)}>Пропустить</button>
-                    <button className="text-button primary" disabled={conferenceBusy} onClick={handleConferenceConnect}>Подключиться</button>
-                  </>
-                ) : conferenceActive ? (
-                  <div className="conference-icon-actions">
-                    {conferenceJoined ? (
-                      <>
-                        <button
-                          className="icon-button conference-test-button"
-                          disabled={conferenceBusy}
-                          onClick={handleConferenceTest}
-                          aria-label="Проверить звук в ВКС"
-                          title="Проверить звук в ВКС"
-                        >
-                          {icon('play')}
-                        </button>
-                        <button
-                          className="icon-button conference-disconnect-button"
-                          onClick={handleConferenceDisconnect}
-                          aria-label="Отключиться от ВКС"
-                          title="Отключиться"
-                        >
-                          {icon('disconnect')}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        {(conferenceState.phase === 'connecting' || conferenceState.phase === 'waitingAdmission') && (
-                          <button className="text-button secondary compact-button" disabled={conferenceBusy} onClick={handleConferenceConfirm}>Я уже подключён</button>
-                        )}
-                      </>
-                    )}
-                    {import.meta.env.DEV && (
-                      <button
-                        className="text-button secondary compact-button"
-                        disabled={conferenceBusy}
-                        onClick={handleConferenceDiagnostics}
-                      >
-                        Диагностика
-                      </button>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-              {conferenceJoined && (
-                <div className={`conference-test-state ${conferenceState.tested ? 'is-ready' : ''}`}>
-                  <span className="connection-dot" />
-                  {conferenceState.tested ? 'Звук проверен' : 'Проверьте звук перед запуском'}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
+        <ConferenceWizard
+          step={conferenceWizardStep}
+          state={conferenceState}
+          conferenceUrl={conferenceUrl}
+          conferenceName={conferenceName}
+          cameraEnabled={conferenceCameraEnabled}
+          busy={conferenceBusy}
+          error={conferenceError}
+          recent={recentConferences}
+          testing={conferenceTesting}
+          diagnostics={import.meta.env.DEV}
+          setupEditing={conferenceSetupEditing}
+          onUrlChange={setConferenceUrl}
+          onNameChange={setConferenceName}
+          onSelectRecent={setConferenceUrl}
+          onCameraToggle={handleConferenceCameraToggle}
+          onConnect={handleConferenceConnect}
+          onSkip={() => setConnectionPromptOpen(false)}
+          onCancelConnect={handleConferenceDisconnect}
+          onManualConfirm={handleConferenceConfirm}
+          onRetry={handleConferenceConnect}
+          onEditDetails={() => {
+            setConferenceError('');
+            setConferenceSetupEditing(true);
+            setConferenceWizardStep(1);
+          }}
+          onTestSound={handleConferenceTest}
+          onDisconnect={handleConferenceDisconnect}
+          onNext={() => setConferenceWizardStep(3)}
+          onDone={() => setConnectionPromptOpen(false)}
+          onDiagnostics={handleConferenceDiagnostics}
+        />
       )}
 
       {settingsOpen && (

@@ -822,6 +822,233 @@ input[type="range"] {
   margin-top: 0;
 }
 
+.wizard-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(460px, 100%);
+  min-height: 540px;
+  max-height: min(720px, calc(100vh - 48px));
+  padding: 28px 28px 20px;
+}
+
+.wizard-modal .panel-error {
+  margin: 0 0 16px;
+}
+
+.wizard-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.wizard-progress-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--app-hint);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wizard-progress-name {
+  color: var(--app-heading);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.wizard-progress-dots {
+  display: flex;
+  gap: 8px;
+}
+
+.wizard-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--app-input-border);
+}
+
+.wizard-dot.is-current,
+.wizard-dot.is-done {
+  background: var(--app-text-button-primary-bg);
+}
+
+.wizard-header h2 {
+  margin: 0 0 8px;
+  color: var(--app-heading);
+}
+
+.wizard-header .modal-copy {
+  margin: 0 0 18px;
+}
+
+.wizard-body {
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+
+.wizard-form label:not(.settings-checkbox) {
+  display: flex;
+  flex-direction: column;
+}
+
+.wizard-form .settings-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.wizard-recent {
+  margin: -4px 0 16px;
+}
+
+.wizard-recent-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--app-label);
+  font-size: 0.72rem;
+}
+
+.wizard-recent ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wizard-recent-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--app-input-border);
+  border-radius: 10px;
+  background: var(--app-input-bg);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wizard-recent-item:hover {
+  border-color: var(--app-icon-hover-border);
+}
+
+.wizard-recent-title {
+  color: var(--app-heading);
+  font-size: 0.8rem;
+}
+
+.wizard-recent-url {
+  color: var(--app-hint);
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+
+.wizard-recent-hint {
+  margin: 8px 0 0;
+  color: var(--app-hint);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.wizard-connecting,
+.wizard-check,
+.wizard-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wizard-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.wizard-status-wait {
+  color: var(--app-control-pause-color);
+}
+
+.wizard-status-ok {
+  color: var(--app-control-play-color);
+}
+
+.wizard-status-error {
+  color: var(--app-text-button-danger-color);
+}
+
+.wizard-hint,
+.wizard-fallback {
+  margin: 0;
+  color: var(--app-hint);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.wizard-success {
+  margin: 0;
+  color: var(--app-control-play-color);
+  font-size: 0.84rem;
+}
+
+.wizard-facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.wizard-facts div {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-facts dt {
+  color: var(--app-label);
+  font-size: 0.72rem;
+}
+
+.wizard-facts dd {
+  margin: 0;
+  color: var(--app-heading);
+  font-size: 0.88rem;
+}
+
+.wizard-url {
+  word-break: break-all;
+  font-size: 0.78rem;
+}
+
+.wizard-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-section-border);
+}
+
+.wizard-diagnostics {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+.wizard-test-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .conference-active-actions {
   justify-content: center;
   align-items: center;

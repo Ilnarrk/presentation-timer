@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
@@ -756,10 +757,13 @@ func (a *App) playConferenceCue(soundID string) {
 	}
 }
 
-func (a *App) playLocalSoundAsync(soundID string, context string) {
+func (a *App) playLocalSoundAsync(soundID string, logContext string) {
 	go func() {
 		if err := a.audio.Play(soundID); err != nil {
-			runtime.LogErrorf(a.ctx, "%s failed: %v", context, err)
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			runtime.LogErrorf(a.ctx, "%s failed: %v", logContext, err)
 			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
 		}
 	}()
