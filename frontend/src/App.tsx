@@ -318,7 +318,7 @@ function App() {
   const [questionsSecondsPart, setQuestionsSecondsPart] = useState(0);
   const [reminderMinutes, setReminderMinutes] = useState(2);
   const [reminderSecondsPart, setReminderSecondsPart] = useState(0);
-  const [soundId, setSoundId] = useState('chime');
+  const [soundId, setSoundId] = useState('');
   const [reminderSoundId, setReminderSoundId] = useState('');
   const [questionsSoundId, setQuestionsSoundId] = useState('');
   const [nextSoundId, setNextSoundId] = useState('');

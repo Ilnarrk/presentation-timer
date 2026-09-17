@@ -83,7 +83,7 @@ wails doctor
 Откройте PowerShell, склонируйте репозиторий и перейдите в папку проекта:
 
 ```powershell
-git clone https://github.com/Ilnarrk/presentation-timer.git
+git clone https://github.com/Ilnarrk/presentation-timer/releases.git
 cd presentation-timer
 ```
 
@@ -173,7 +173,7 @@ powershell -ExecutionPolicy Bypass -File build\windows\sign-binaries.ps1 -PfxPat
 
 Windows может показать SmartScreen или Defender для неподписанного либо **самоподписанного** `.exe`: нет репутации у центра сертификации, а приложение запускает браузер для ВКС.
 
-- Скачивайте файлы **только** с [GitHub Releases](https://github.com/Ilnarrk/presentation-timer/releases) и сверяйте SHA256 из описания релиза.
+- Скачивайте файлы **только** с [GitHub Releases](https://github.com/Ilnarrk/presentation-timer/releases/releases) и сверяйте SHA256 из описания релиза.
 - **Рекомендуется инсталлятор** `presentation-timer-*-installer.exe`. Он запросит права администратора, установит приложение и сам импортирует публичный `codesign.cer` в хранилища «Доверенные лица» и «Доверенные издатели» локального компьютера (`certutil -addstore`). Закрытый ключ (`.pfx`) в инсталлятор не входит.
 - Portable `presentation-timer.exe` сертификат сам не ставит. При необходимости импортируйте `codesign.cer` вручную:
 
@@ -463,7 +463,7 @@ presentation-timer/
 
 ```powershell
 # Клонирование (один раз)
-git clone https://github.com/Ilnarrk/presentation-timer.git
+git clone https://github.com/Ilnarrk/presentation-timer/releases.git
 cd presentation-timer
 
 # Сборка и подпись (нужны codesign.pfx / .cer, NSIS в PATH)

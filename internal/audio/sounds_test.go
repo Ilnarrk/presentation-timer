@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,10 +13,10 @@ import (
 	"time"
 )
 
-func TestProjectSoundsAndAliasDefaults(t *testing.T) {
+func TestProjectSoundsAndDefaults(t *testing.T) {
 	wav := synthesizeTone(440, 20*time.Millisecond, 1)
 	project := fstest.MapFS{
-		"sounds/my_alert.wav":            {Data: wav},
+		"sounds/alert.wav":               {Data: wav},
 		"sounds/время вопросов.wav":      {Data: wav},
 		"sounds/следующий-докладчик.wav": {Data: wav},
 		"sounds/other.wav":               {Data: wav},
@@ -23,14 +24,19 @@ func TestProjectSoundsAndAliasDefaults(t *testing.T) {
 	}
 	catalog := NewMemoryCatalog(project)
 
-	if got := len(catalog.ListSounds()); got != 8 {
-		t.Fatalf("expected built-ins and four embedded sounds, got %d", got)
+	sounds := catalog.ListSounds()
+	if len(sounds) != 4 {
+		t.Fatalf("expected four embedded sounds, got %d", len(sounds))
+	}
+	if sounds[0].Label != "alert" || sounds[1].Label != "other" {
+		t.Fatalf("expected original filenames as labels, got %+v", sounds)
 	}
 	defaults := catalog.Defaults()
-	if defaults.AlertID != "embedded:my_alert.wav" ||
-		defaults.QuestionsID != "embedded:время вопросов.wav" ||
-		defaults.NextID != "embedded:следующий-докладчик.wav" {
-		t.Fatalf("unexpected project defaults: %+v", defaults)
+	if defaults.AlertID != "embedded:alert.wav" {
+		t.Fatalf("unexpected alert default: %+v", defaults)
+	}
+	if defaults.QuestionsID != "" || defaults.NextID != "" {
+		t.Fatalf("only alert should be auto-assigned: %+v", defaults)
 	}
 }
 
@@ -90,8 +96,16 @@ func TestRejectsOversizedDuration(t *testing.T) {
 	}
 }
 
+func testPlayerWithSound() *Player {
+	wav := synthesizeTone(440, 20*time.Millisecond, 1)
+	catalog := NewMemoryCatalog(fstest.MapFS{
+		"sounds/test.wav": {Data: wav},
+	})
+	return NewPlayer(catalog)
+}
+
 func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
-	player := NewPlayer()
+	player := testPlayerWithSound()
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
@@ -103,11 +117,11 @@ func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		firstDone <- player.Preview("chime")
+		firstDone <- player.Preview("embedded:test.wav")
 	}()
 	<-started
 
-	if err := player.Preview("chime"); !errors.Is(err, ErrPreviewInProgress) {
+	if err := player.Preview("embedded:test.wav"); !errors.Is(err, ErrPreviewInProgress) {
 		t.Fatalf("second Preview() error = %v, want ErrPreviewInProgress", err)
 	}
 	close(release)
@@ -117,7 +131,7 @@ func TestPreviewRejectsConcurrentPlayback(t *testing.T) {
 }
 
 func TestPlayInterruptsConcurrentPlayback(t *testing.T) {
-	player := NewPlayer()
+	player := testPlayerWithSound()
 	firstStarted := make(chan struct{})
 	firstInterrupted := make(chan struct{})
 	secondStarted := make(chan struct{})
@@ -136,7 +150,7 @@ func TestPlayInterruptsConcurrentPlayback(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		firstDone <- player.Play("chime")
+		firstDone <- player.Play("embedded:test.wav")
 	}()
 	<-firstStarted
 
@@ -147,7 +161,7 @@ func TestPlayInterruptsConcurrentPlayback(t *testing.T) {
 
 	secondDone := make(chan error, 1)
 	go func() {
-		secondDone <- player.Play("chime")
+		secondDone <- player.Play("embedded:test.wav")
 	}()
 
 	<-firstInterrupted
@@ -159,4 +173,17 @@ func TestPlayInterruptsConcurrentPlayback(t *testing.T) {
 	if err := <-secondDone; err != nil {
 		t.Fatalf("second Play() error = %v", err)
 	}
+}
+
+func synthesizeTone(freq float64, duration time.Duration, volume float64) []byte {
+	const sampleRate = outputSampleRate
+	frameCount := int(float64(sampleRate) * duration.Seconds())
+	samples := make([]int16, frameCount)
+	for i := 0; i < frameCount; i++ {
+		t := float64(i) / float64(sampleRate)
+		envelope := math.Min(1, math.Min(t*12, (duration.Seconds()-t)*12))
+		sample := math.Sin(2*math.Pi*freq*t) * envelope * volume
+		samples[i] = int16(math.MaxInt16 * math.Max(-1, math.Min(1, sample)))
+	}
+	return encodeWAV(samples, sampleRate, 1)
 }

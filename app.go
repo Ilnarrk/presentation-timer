@@ -66,8 +66,6 @@ func (a *App) startup(ctx context.Context) {
 	if soundDefaults.AlertID != "" {
 		defaults.SoundID = soundDefaults.AlertID
 	}
-	defaults.QuestionsSoundID = soundDefaults.QuestionsID
-	defaults.NextSoundID = soundDefaults.NextID
 
 	store, err := settings.NewStoreWithDefaults(defaults)
 	if err != nil {
@@ -177,9 +175,6 @@ func (a *App) SaveSettings(input settings.Settings) error {
 	}
 	if input.Volume > 1 {
 		input.Volume = 1
-	}
-	if input.SoundID == "" {
-		input.SoundID = "chime"
 	}
 	if input.DeviceID == "" {
 		input.DeviceID = "default"

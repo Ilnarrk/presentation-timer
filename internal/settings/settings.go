@@ -104,7 +104,7 @@ func Default() Settings {
 		QuestionsSeconds:           0,
 		ReminderMinutes:            2,
 		ReminderSeconds:            0,
-		SoundID:                    "chime",
+		SoundID:                    "",
 		ReminderSoundID:            "",
 		QuestionsSoundID:           "",
 		NextSoundID:                "",
@@ -236,9 +236,6 @@ func normalize(value, fallback Settings) Settings {
 	}
 	if value.SoundID == "" {
 		value.SoundID = fallback.SoundID
-		if value.SoundID == "" {
-			value.SoundID = "chime"
-		}
 	}
 	if value.Volume < 0 {
 		value.Volume = 0

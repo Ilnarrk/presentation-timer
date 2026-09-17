@@ -83,14 +83,10 @@ func NewMemoryCatalog(projectFS fs.FS) *Catalog {
 }
 
 func newCatalog(customDir string) *Catalog {
-	c := &Catalog{
+	return &Catalog{
 		sounds:    make(map[string]soundData),
 		customDir: customDir,
 	}
-	for _, builtin := range builtinSounds() {
-		c.add(builtin)
-	}
-	return c
 }
 
 func (c *Catalog) ListSounds() []Sound {
@@ -259,31 +255,18 @@ func writeSoundMetadata(dir, stem, label string) error {
 }
 
 func (c *Catalog) matchProjectDefaultLocked(sound soundData) {
-	name := strings.ToLower(strings.TrimSuffix(filepath.Base(sound.ID), filepath.Ext(sound.ID)))
-	name = strings.NewReplacer("_", " ", "-", " ", ".", " ").Replace(name)
-	switch {
-	case containsAlias(name, "alert", "overtime", "просрочка"):
-		if c.defaults.AlertID == "" {
-			c.defaults.AlertID = sound.ID
-		}
-	case containsAlias(name, "questions", "время вопросов"):
-		if c.defaults.QuestionsID == "" {
-			c.defaults.QuestionsID = sound.ID
-		}
-	case containsAlias(name, "next", "следующий докладчик"):
-		if c.defaults.NextID == "" {
-			c.defaults.NextID = sound.ID
-		}
+	if c.defaults.AlertID != "" {
+		return
 	}
+	if projectSoundBaseName(sound.ID) != "alert" {
+		return
+	}
+	c.defaults.AlertID = sound.ID
 }
 
-func containsAlias(name string, aliases ...string) bool {
-	for _, alias := range aliases {
-		if strings.Contains(name, alias) {
-			return true
-		}
-	}
-	return false
+func projectSoundBaseName(id string) string {
+	base := strings.TrimPrefix(id, "embedded:")
+	return strings.ToLower(strings.TrimSuffix(base, filepath.Ext(base)))
 }
 
 func (c *Catalog) add(sound soundData) {
@@ -298,29 +281,6 @@ func (c *Catalog) addLocked(sound soundData) {
 	}
 	c.sounds[sound.ID] = sound
 	c.order = append(c.order, sound.ID)
-}
-
-func builtinSounds() []soundData {
-	return []soundData{
-		{Sound: Sound{ID: "chime", Label: "Мягкий звон", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
-			{freq: 523.25, duration: 180 * time.Millisecond},
-			{freq: 659.25, duration: 220 * time.Millisecond},
-			{freq: 783.99, duration: 280 * time.Millisecond},
-		}, 1)},
-		{Sound: Sound{ID: "bell", Label: "Колокол", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
-			{freq: 880, duration: 180 * time.Millisecond},
-			{freq: 660, duration: 260 * time.Millisecond},
-			{freq: 990, duration: 320 * time.Millisecond},
-		}, 1)},
-		{Sound: Sound{ID: "beep", Label: "Сигнал", Source: "builtin"}, wav: synthesizeTone(1000, 450*time.Millisecond, 1)},
-		{Sound: Sound{ID: "alarm", Label: "Тревога", Source: "builtin"}, wav: synthesizeSequence([]toneSegment{
-			{freq: 740, duration: 220 * time.Millisecond},
-			{freq: 0, duration: 80 * time.Millisecond},
-			{freq: 740, duration: 220 * time.Millisecond},
-			{freq: 0, duration: 80 * time.Millisecond},
-			{freq: 740, duration: 220 * time.Millisecond},
-		}, 1)},
-	}
 }
 
 type Player struct {
@@ -425,33 +385,6 @@ func clampVolume(volume float64) float64 {
 		return 1
 	}
 	return volume
-}
-
-type toneSegment struct {
-	freq     float64
-	duration time.Duration
-}
-
-func synthesizeTone(freq float64, duration time.Duration, volume float64) []byte {
-	return synthesizeSequence([]toneSegment{{freq: freq, duration: duration}}, volume)
-}
-
-func synthesizeSequence(segments []toneSegment, volume float64) []byte {
-	const sampleRate = outputSampleRate
-	var samples []int16
-	for _, segment := range segments {
-		frameCount := int(float64(sampleRate) * segment.duration.Seconds())
-		for i := 0; i < frameCount; i++ {
-			var sample float64
-			if segment.freq > 0 {
-				t := float64(i) / float64(sampleRate)
-				envelope := math.Min(1, math.Min(t*12, (segment.duration.Seconds()-t)*12))
-				sample = math.Sin(2*math.Pi*segment.freq*t) * envelope * volume
-			}
-			samples = append(samples, int16(math.MaxInt16*math.Max(-1, math.Min(1, sample))))
-		}
-	}
-	return encodeWAV(samples, sampleRate, 1)
 }
 
 func encodeWAV(samples []int16, sampleRate, channels int) []byte {
