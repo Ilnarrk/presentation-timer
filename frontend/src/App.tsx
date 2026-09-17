@@ -55,8 +55,10 @@ import {
   isConferenceConnecting,
   isConferenceJoined,
   loadRecentConferences,
+  normalizeConferenceHistoryUrl,
   rememberConferenceConnection,
   wizardStepForOpen,
+  type ConferenceAction,
   type ConferenceState,
   type ConferenceWizardStep,
   type RecentConference,
@@ -472,7 +474,7 @@ function App() {
   const [conferenceWizardStep, setConferenceWizardStep] = useState<ConferenceWizardStep>(1);
   const [conferenceTesting, setConferenceTesting] = useState(false);
   const [recentConferences, setRecentConferences] = useState<RecentConference[]>([]);
-  const [conferenceSetupEditing, setConferenceSetupEditing] = useState(false);
+  const [conferenceAction, setConferenceAction] = useState<ConferenceAction>('idle');
   const connectionPromptOpenRef = useRef(connectionPromptOpen);
   const [sessionTotalHours, setSessionTotalHours] = useState(0);
   const [sessionTotalMinutes, setSessionTotalMinutes] = useState(0);
@@ -1212,8 +1214,11 @@ function App() {
   };
 
   const handleConferenceConnect = async () => {
-    if (!conferenceUrl.trim()) {
-      setConferenceError('Укажите HTTPS-ссылку на встречу');
+    setConferenceAction('validating');
+    const normalized = normalizeConferenceHistoryUrl(conferenceUrl);
+    if (!normalized) {
+      setConferenceError('Проверьте ссылку и попробуйте снова');
+      setConferenceAction('idle');
       return;
     }
     setConferenceBusy(true);
@@ -1224,7 +1229,6 @@ function App() {
       setConferenceWizardStep(1);
       setConnectionPromptOpen(true);
       setConferenceError('');
-      setConferenceSetupEditing(false);
       setRecentConferences(rememberConferenceConnection(
         rawUrl,
         (state as ConferenceState).platform || conferenceName.trim(),
@@ -1232,30 +1236,32 @@ function App() {
     } catch (err) {
       setConferenceWizardStep(1);
       setConnectionPromptOpen(true);
-      setConferenceSetupEditing(false);
       setConferenceError(formatAppError(err));
     } finally {
+      setConferenceAction('idle');
       setConferenceBusy(false);
     }
   };
 
   const handleConferenceDisconnect = async () => {
+    setConferenceAction('disconnecting');
     setConferenceBusy(true);
     try {
       await DisconnectConference();
       const state = await GetConferenceState();
       setConferenceState(state as ConferenceState);
       setConferenceWizardStep(1);
-      setConferenceSetupEditing(false);
       setConferenceError('');
     } catch (err) {
       setConferenceError(formatAppError(err));
     } finally {
+      setConferenceAction('idle');
       setConferenceBusy(false);
     }
   };
 
   const handleConferenceConfirm = async () => {
+    setConferenceAction('confirming');
     setConferenceBusy(true);
     try {
       await ConfirmConferenceJoined();
@@ -1269,6 +1275,7 @@ function App() {
         setConferenceError(formatAppError(err));
       }
     } finally {
+      setConferenceAction('idle');
       setConferenceBusy(false);
     }
   };
@@ -1879,25 +1886,31 @@ function App() {
           error={conferenceError}
           recent={recentConferences}
           testing={conferenceTesting}
+          action={conferenceAction}
           diagnostics={import.meta.env.DEV}
-          setupEditing={conferenceSetupEditing}
-          onUrlChange={setConferenceUrl}
-          onNameChange={setConferenceName}
-          onSelectRecent={setConferenceUrl}
+          onUrlChange={(value) => {
+            setConferenceUrl(value);
+            if (conferenceError) setConferenceError('');
+          }}
+          onNameChange={(value) => {
+            setConferenceName(value);
+            if (conferenceError) setConferenceError('');
+          }}
+          onSelectRecent={(value) => {
+            setConferenceUrl(value);
+            setConferenceError('');
+          }}
           onCameraToggle={handleConferenceCameraToggle}
           onConnect={handleConferenceConnect}
           onSkip={() => setConnectionPromptOpen(false)}
           onCancelConnect={handleConferenceDisconnect}
           onManualConfirm={handleConferenceConfirm}
           onRetry={handleConferenceConnect}
-          onEditDetails={() => {
-            setConferenceError('');
-            setConferenceSetupEditing(true);
-            setConferenceWizardStep(1);
-          }}
+          onEditDetails={handleConferenceDisconnect}
           onTestSound={handleConferenceTest}
           onDisconnect={handleConferenceDisconnect}
           onNext={() => setConferenceWizardStep(3)}
+          onBackToCheck={() => setConferenceWizardStep(2)}
           onDone={() => setConnectionPromptOpen(false)}
           onDiagnostics={handleConferenceDiagnostics}
         />

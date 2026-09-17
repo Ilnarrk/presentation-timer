@@ -21,6 +21,18 @@ export interface ConferenceState {
 
 export type ConferenceWizardStep = 1 | 2 | 3;
 
+export type ConferenceAction = 'idle' | 'validating' | 'confirming' | 'disconnecting';
+
+export type ConferenceUiState =
+  | 'idle'
+  | 'validating'
+  | 'connecting'
+  | 'waiting_for_user'
+  | 'testing_audio'
+  | 'connected'
+  | 'error'
+  | 'disconnecting';
+
 export interface RecentConference {
   url: string;
   title: string;
@@ -62,6 +74,21 @@ export function isConferenceJoined(phase: ConferencePhase): boolean {
 
 export function isConferenceActive(phase: ConferencePhase): boolean {
   return isConferenceConnecting(phase) || isConferenceJoined(phase);
+}
+
+export function conferenceUiState(
+  state: ConferenceState,
+  action: ConferenceAction,
+  testingAudio: boolean,
+): ConferenceUiState {
+  if (action === 'disconnecting') return 'disconnecting';
+  if (action === 'validating') return 'validating';
+  if (testingAudio || state.phase === 'playing') return 'testing_audio';
+  if (state.phase === 'waitingAdmission') return 'waiting_for_user';
+  if (state.phase === 'opening' || state.phase === 'connecting' || action === 'confirming') return 'connecting';
+  if (state.phase === 'error') return 'error';
+  if (isConferenceJoined(state.phase)) return 'connected';
+  return 'idle';
 }
 
 /** Full HTTPS URL for history: keeps query/hash, rejects userinfo (same as backend Resolve). */
