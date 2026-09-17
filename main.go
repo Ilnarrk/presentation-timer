@@ -59,12 +59,18 @@ func main() {
 			WindowIsTranslucent:  true,
 			Theme:                windows.Dark,
 			CustomTheme: &windows.ThemeSettings{
-				DarkModeTitleBar:          0x0018120f, // #0f1218
-				DarkModeTitleBarInactive:  0x0018120f,
-				DarkModeTitleText:         0x00ffffff,
-				DarkModeTitleTextInactive: 0x00b8a8a0,
-				DarkModeBorder:            0x00302820, // #202830
-				DarkModeBorderInactive:    0x00302820,
+				DarkModeTitleBar:           windows.RGB(15, 18, 24),
+				DarkModeTitleBarInactive:   windows.RGB(15, 18, 24),
+				DarkModeTitleText:          windows.RGB(255, 255, 255),
+				DarkModeTitleTextInactive:  windows.RGB(184, 168, 160),
+				DarkModeBorder:             windows.RGB(32, 40, 48),
+				DarkModeBorderInactive:     windows.RGB(32, 40, 48),
+				LightModeTitleBar:          windows.RGB(255, 255, 255),
+				LightModeTitleBarInactive:  windows.RGB(245, 247, 250),
+				LightModeTitleText:         windows.RGB(16, 24, 39),
+				LightModeTitleTextInactive: windows.RGB(95, 107, 128),
+				LightModeBorder:            windows.RGB(214, 220, 229),
+				LightModeBorderInactive:    windows.RGB(226, 232, 240),
 			},
 		},
 	})

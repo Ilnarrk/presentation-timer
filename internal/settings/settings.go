@@ -40,6 +40,7 @@ type Settings struct {
 	TimerDisplayMode           string   `json:"timerDisplayMode"`
 	TimerFont                  string   `json:"timerFont"`
 	WidgetPlacement            string   `json:"widgetPlacement"`
+	AppTheme                   string   `json:"appTheme"`
 	WidgetTheme                string   `json:"widgetTheme"`
 	WidgetShape                string   `json:"widgetShape"`
 	WidgetBackgroundTransparency int    `json:"widgetBackgroundTransparency"`
@@ -66,6 +67,8 @@ const (
 	WidgetPlacementTopCenter = "topCenter"
 	WidgetPlacementTopLeft  = "topLeft"
 	WidgetPlacementFree     = "free"
+	AppThemeDark            = "dark"
+	AppThemeLight           = "light"
 	WidgetThemeDark         = "dark"
 	WidgetThemeLight        = "light"
 	WidgetThemeGreen        = "green"
@@ -116,6 +119,7 @@ func Default() Settings {
 		TimerDisplayMode:           TimerDisplayModeRing,
 		TimerFont:                  TimerFontSystem,
 		WidgetPlacement:            WidgetPlacementTopRight,
+		AppTheme:                   AppThemeDark,
 		WidgetTheme:                WidgetThemeDark,
 		WidgetShape:                WidgetShapeRounded,
 		WidgetBackgroundTransparency: DefaultWidgetBackgroundTransparency,
@@ -309,6 +313,11 @@ func normalize(value, fallback Settings) Settings {
 		} else {
 			value.WidgetPlacement = WidgetPlacementTopRight
 		}
+	}
+	switch value.AppTheme {
+	case AppThemeLight:
+	default:
+		value.AppTheme = AppThemeDark
 	}
 	switch value.WidgetTheme {
 	case "violet":

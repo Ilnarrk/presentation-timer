@@ -237,6 +237,25 @@ func TestWidgetAppearanceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNormalizeAppTheme(t *testing.T) {
+	value := Default()
+	value.AppTheme = "invalid"
+	got := normalize(value, Default())
+	if got.AppTheme != AppThemeDark {
+		t.Fatalf("invalid app theme was not normalized: %+v", got)
+	}
+
+	value.AppTheme = AppThemeLight
+	if got = normalize(value, Default()); got.AppTheme != AppThemeLight {
+		t.Fatalf("valid app theme was not preserved: %+v", got)
+	}
+
+	value.AppTheme = "transparent"
+	if got = normalize(value, Default()); got.AppTheme != AppThemeDark {
+		t.Fatalf("unsupported app theme was not normalized to dark: %+v", got)
+	}
+}
+
 func TestNormalizeWidgetAppearance(t *testing.T) {
 	value := Default()
 	value.WidgetTheme = "invalid"

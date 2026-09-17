@@ -38,7 +38,14 @@ import {
   Start,
   TestConferenceSound,
 } from '../wailsjs/go/main/App';
-import { EventsOn, BrowserOpenURL, ClipboardSetText } from '../wailsjs/runtime/runtime';
+import {
+  EventsOn,
+  BrowserOpenURL,
+  ClipboardSetText,
+  WindowSetBackgroundColour,
+  WindowSetDarkTheme,
+  WindowSetLightTheme,
+} from '../wailsjs/runtime/runtime';
 import { buildinfo, session, settings, templates, timer } from '../wailsjs/go/models';
 import { TIMER_FONT_OPTIONS, timerFontClass, timerFontStyle } from './timerFonts';
 import {
@@ -164,8 +171,25 @@ const MIN_WIDGET_BACKGROUND_TRANSPARENCY = 0;
 const MAX_WIDGET_BACKGROUND_TRANSPARENCY = 100;
 
 type WidgetPlacement = 'topRight' | 'topCenter' | 'topLeft' | 'free';
+type AppTheme = 'dark' | 'light';
 type WidgetTheme = 'dark' | 'light' | 'green' | 'transparent';
 type WidgetShape = 'rounded' | 'rectangular';
+const WIDGET_THEME_OPTIONS: Array<[WidgetTheme, string]> = [
+  ['dark', 'Тёмная'],
+  ['light', 'Светлая'],
+  ['green', 'Зелёная'],
+  ['transparent', 'Прозрачная'],
+];
+const APP_THEME_WINDOW_BACKGROUND: Record<AppTheme, [number, number, number, number]> = {
+  dark: [8, 11, 18, 255],
+  light: [255, 255, 255, 255],
+};
+const WIDGET_THEME_WINDOW_BACKGROUND: Record<WidgetTheme, [number, number, number, number]> = {
+  dark: [8, 11, 18, 255],
+  light: [255, 255, 255, 255],
+  green: [8, 120, 77, 255],
+  transparent: [0, 0, 0, 0],
+};
 type TimerDisplayMode = 'ring' | 'digital';
 type TimerFont = string;
 type SettingsTab = 'timer' | 'interface' | 'sound';
@@ -347,6 +371,7 @@ function App() {
   const [timerDisplayMode, setTimerDisplayMode] = useState<TimerDisplayMode>('ring');
   const [timerFont, setTimerFont] = useState<TimerFont>('system');
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
+  const [appTheme, setAppTheme] = useState<AppTheme>('dark');
   const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
   const [widgetBackgroundTransparency, setWidgetBackgroundTransparency] = useState(0);
@@ -430,6 +455,7 @@ function App() {
       timerDisplayMode: next?.timerDisplayMode ?? timerDisplayMode,
       timerFont: next?.timerFont ?? timerFont,
       widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
+      appTheme: next?.appTheme ?? appTheme,
       widgetTheme: next?.widgetTheme ?? widgetTheme,
       widgetShape: next?.widgetShape ?? widgetShape,
       widgetBackgroundTransparency: next?.widgetBackgroundTransparency ?? widgetBackgroundTransparency,
@@ -450,6 +476,7 @@ function App() {
       setTimerDisplayMode((saved.timerDisplayMode as TimerDisplayMode) || 'ring');
       setTimerFont((saved.timerFont as TimerFont) || 'system');
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
+      setAppTheme((saved.appTheme as AppTheme) || 'dark');
       setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
       setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, saved.widgetBackgroundTransparency ?? 0)));
@@ -487,6 +514,7 @@ function App() {
     timerDisplayMode,
     timerFont,
     widgetPlacement,
+    appTheme,
     widgetTheme,
     widgetShape,
     widgetBackgroundTransparency,
@@ -535,6 +563,7 @@ function App() {
       setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
       setTimerFont((initialSettings.timerFont as TimerFont) || 'system');
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
+      setAppTheme((initialSettings.appTheme as AppTheme) || 'dark');
       setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
       setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, initialSettings.widgetBackgroundTransparency ?? 0)));
@@ -569,6 +598,21 @@ function App() {
 
     bootstrap().catch((err) => setError(String(err)));
   }, []);
+
+  useEffect(() => {
+    if (widgetMode) {
+      const [r, g, b, a] = WIDGET_THEME_WINDOW_BACKGROUND[widgetTheme];
+      WindowSetBackgroundColour(r, g, b, a);
+      return;
+    }
+    if (appTheme === 'light') {
+      WindowSetLightTheme();
+    } else {
+      WindowSetDarkTheme();
+    }
+    const [r, g, b, a] = APP_THEME_WINDOW_BACKGROUND[appTheme];
+    WindowSetBackgroundColour(r, g, b, a);
+  }, [widgetMode, widgetTheme, appTheme]);
 
   useEffect(() => {
     if (!widgetDurationOpen) return undefined;
@@ -671,7 +715,16 @@ function App() {
     return 'status-idle';
   }, [snapshot]);
 
+  const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
+  const closeWidgetDuration = useCallback(() => {
+    setWidgetDurationOpen(false);
+    setWidgetDurationCustomOpen(false);
+    setWidgetDurationInvalid(false);
+    void SetWidgetQuickTimeOpen(false);
+  }, []);
+
   const handleStart = async () => {
+    closeWidgetDuration();
     try {
       await persistSettings();
       await Start();
@@ -687,6 +740,7 @@ function App() {
   };
 
   const handleGoToQuestions = async () => {
+    closeWidgetDuration();
     try {
       await GoToQuestions();
       setError('');
@@ -696,6 +750,7 @@ function App() {
   };
 
   const handleNextSpeaker = async () => {
+    closeWidgetDuration();
     try {
       await NextSpeaker();
       setError('');
@@ -704,7 +759,6 @@ function App() {
     }
   };
 
-  const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
   const openWidgetDuration = async () => {
     setWidgetDurationDraft(String(widgetDurationMinutes));
     setWidgetDurationCustomOpen(false);
@@ -717,12 +771,6 @@ function App() {
       setError(String(err));
     }
   };
-  const closeWidgetDuration = () => {
-    setWidgetDurationOpen(false);
-    setWidgetDurationCustomOpen(false);
-    setWidgetDurationInvalid(false);
-    void SetWidgetQuickTimeOpen(false);
-  };
   const toggleWidgetDuration = async () => {
     if (widgetDurationOpen) {
       closeWidgetDuration();
@@ -730,6 +778,13 @@ function App() {
     }
     await openWidgetDuration();
   };
+
+  useEffect(() => {
+    if (widgetDurationOpen && snapshot.isRunning && !snapshot.isPaused) {
+      closeWidgetDuration();
+    }
+  }, [widgetDurationOpen, snapshot.isRunning, snapshot.isPaused, closeWidgetDuration]);
+
   const applyWidgetDuration = async (value: string | number = widgetDurationDraft, keepOpen = false) => {
     const parsed = Number(value);
     if (!Number.isInteger(parsed) || parsed < MIN_WIDGET_DURATION || parsed > MAX_WIDGET_DURATION) {
@@ -1139,7 +1194,7 @@ function App() {
     active: settingsOpen && settingsTab === 'interface',
   });
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check' | 'sun' | 'moon') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -1160,6 +1215,8 @@ function App() {
       clock: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
       edit: <><path d="m5 16-.8 4 4-.8L19 8.4a2.1 2.1 0 0 0-3-3L5 16Z" /><path d="m14.5 7.5 3 3" /></>,
       check: <path d="m6.5 12.5 4 4 8.5-8.5" />,
+      sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2.2M12 19.3v2.2M4.5 12H2.3M21.7 12h-2.2M5.8 5.8 4.3 4.3M19.7 19.7l-1.5-1.5M18.2 5.8l1.5-1.5M5.8 18.2l-1.5 1.5" /></>,
+      moon: <path d="M20 14.2A7.5 7.5 0 0 1 9.8 4 6.5 6.5 0 1 0 20 14.2Z" />,
     };
     return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
   };
@@ -1309,8 +1366,8 @@ function App() {
 
   return (
     <div
-      className={`app-shell timer-display-${timerDisplayMode} ${timerFontClass(timerFont)}${sessionPanelOpen ? ' has-session-panel' : ''}`}
-      style={{ ...timerScaleStyle, ...shellFontStyle }}
+      className={`app-shell timer-display-${timerDisplayMode} ${statusClass} ${timerFontClass(timerFont)} app-theme-${appTheme}${sessionPanelOpen ? ' has-session-panel' : ''}`}
+      style={{ ...timerScaleStyle, ...shellFontStyle, ...widgetColorStyle }}
     >
       <header className="topbar">
         <div className="topbar-left">
@@ -1706,7 +1763,39 @@ function App() {
             {settingsLocked && settingsTab !== 'interface' && <SettingsLockBanner message={settingsLockMessage} />}
 
             <div className="settings-section" id="settings-panel-interface" role="tabpanel" aria-labelledby="settings-tab-interface" hidden={settingsTab !== 'interface'}>
-              <h3>Интерфейс</h3>
+              <div className="section-heading">
+                <h3 id="settings-interface-title">Интерфейс</h3>
+                <div className="theme-scheme-toggle" role="group" aria-label="Тема оформления">
+                  <button
+                    type="button"
+                    className={appTheme === 'light' ? 'is-selected' : ''}
+                    aria-pressed={appTheme === 'light'}
+                    aria-label="Светлая тема"
+                    title="Светлая тема"
+                    onClick={async () => {
+                      if (appTheme === 'light') return;
+                      setAppTheme('light');
+                      await persistSettings({ appTheme: 'light' });
+                    }}
+                  >
+                    {icon('sun')}
+                  </button>
+                  <button
+                    type="button"
+                    className={appTheme === 'dark' ? 'is-selected' : ''}
+                    aria-pressed={appTheme === 'dark'}
+                    aria-label="Тёмная тема"
+                    title="Тёмная тема"
+                    onClick={async () => {
+                      if (appTheme === 'dark') return;
+                      setAppTheme('dark');
+                      await persistSettings({ appTheme: 'dark' });
+                    }}
+                  >
+                    {icon('moon')}
+                  </button>
+                </div>
+              </div>
               <label>
                 Вид таймера
                 <select value={timerDisplayMode} onChange={async (event) => { const next = event.target.value as TimerDisplayMode; setTimerDisplayMode(next); await persistSettings({ timerDisplayMode: next }); }}>
@@ -1829,14 +1918,9 @@ function App() {
               </fieldset>
 
               <fieldset className="widget-option-group">
-                <legend>Цветовая схема</legend>
+                <legend>Цветовая схема виджета</legend>
                 <div className="widget-choice-grid theme-choices">
-                  {([
-                    ['dark', 'Тёмная'],
-                    ['light', 'Светлая'],
-                    ['green', 'Зелёная'],
-                    ['transparent', 'Прозрачная'],
-                  ] as const).map(([value, label]) => (
+                  {WIDGET_THEME_OPTIONS.map(([value, label]) => (
                     <button
                       key={value}
                       type="button"

@@ -228,6 +228,7 @@ export namespace settings {
 	    timerDisplayMode: string;
 	    timerFont: string;
 	    widgetPlacement: string;
+	    appTheme: string;
 	    widgetTheme: string;
 	    widgetShape: string;
 	    widgetBackgroundTransparency: number;
@@ -279,6 +280,7 @@ export namespace settings {
 	        this.timerDisplayMode = source["timerDisplayMode"];
 	        this.timerFont = source["timerFont"];
 	        this.widgetPlacement = source["widgetPlacement"];
+	        this.appTheme = source["appTheme"];
 	        this.widgetTheme = source["widgetTheme"];
 	        this.widgetShape = source["widgetShape"];
 	        this.widgetBackgroundTransparency = source["widgetBackgroundTransparency"];
