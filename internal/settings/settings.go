@@ -42,6 +42,7 @@ type Settings struct {
 	WidgetPlacement            string   `json:"widgetPlacement"`
 	WidgetTheme                string   `json:"widgetTheme"`
 	WidgetShape                string   `json:"widgetShape"`
+	WidgetBackgroundTransparency int    `json:"widgetBackgroundTransparency"`
 	WidgetFreeX                int      `json:"widgetFreeX"`
 	WidgetFreeY                int      `json:"widgetFreeY"`
 	WidgetFreeWidth            int      `json:"widgetFreeWidth"`
@@ -75,6 +76,10 @@ const (
 	TimerDisplayModeDigital = "digital"
 	TimerFontSystem         = "system"
 	TimerFontDigital        = "digital"
+	MinWidgetBackgroundTransparency = 0
+	MaxWidgetBackgroundTransparency = 100
+	DefaultWidgetBackgroundTransparency = 0
+	LegacyTransparentBackgroundTransparency = 82
 )
 
 var timerFontIDPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
@@ -113,6 +118,7 @@ func Default() Settings {
 		WidgetPlacement:            WidgetPlacementTopRight,
 		WidgetTheme:                WidgetThemeDark,
 		WidgetShape:                WidgetShapeRounded,
+		WidgetBackgroundTransparency: DefaultWidgetBackgroundTransparency,
 		WidgetFreeX:                0,
 		WidgetFreeY:                0,
 	}
@@ -310,6 +316,16 @@ func normalize(value, fallback Settings) Settings {
 	case WidgetThemeLight, WidgetThemeGreen, WidgetThemeTransparent:
 	default:
 		value.WidgetTheme = WidgetThemeDark
+	}
+	if value.WidgetBackgroundTransparency < MinWidgetBackgroundTransparency {
+		value.WidgetBackgroundTransparency = MinWidgetBackgroundTransparency
+	}
+	if value.WidgetBackgroundTransparency > MaxWidgetBackgroundTransparency {
+		value.WidgetBackgroundTransparency = MaxWidgetBackgroundTransparency
+	}
+	// Older configs used the "transparent" theme as a boolean switch.
+	if value.WidgetTheme == WidgetThemeTransparent && value.WidgetBackgroundTransparency == 0 {
+		value.WidgetBackgroundTransparency = LegacyTransparentBackgroundTransparency
 	}
 	switch value.WidgetShape {
 	case WidgetShapeRectangular:

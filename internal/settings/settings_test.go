@@ -261,6 +261,23 @@ func TestNormalizeLegacyVioletTheme(t *testing.T) {
 	}
 }
 
+func TestNormalizeWidgetBackgroundTransparency(t *testing.T) {
+	value := Default()
+	value.WidgetBackgroundTransparency = -1
+	if got := normalize(value, Default()); got.WidgetBackgroundTransparency != MinWidgetBackgroundTransparency {
+		t.Fatalf("negative background transparency was not clamped: %d", got.WidgetBackgroundTransparency)
+	}
+	value.WidgetBackgroundTransparency = 101
+	if got := normalize(value, Default()); got.WidgetBackgroundTransparency != MaxWidgetBackgroundTransparency {
+		t.Fatalf("background transparency was not capped: %d", got.WidgetBackgroundTransparency)
+	}
+	value.WidgetTheme = WidgetThemeTransparent
+	value.WidgetBackgroundTransparency = 0
+	if got := normalize(value, Default()); got.WidgetBackgroundTransparency != LegacyTransparentBackgroundTransparency {
+		t.Fatalf("legacy transparent theme was not migrated: %d", got.WidgetBackgroundTransparency)
+	}
+}
+
 func TestNormalizeWidgetColors(t *testing.T) {
 	value := Default()
 	value.WidgetColorIdle = "#35d6a0"

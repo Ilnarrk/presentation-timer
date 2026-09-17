@@ -30,6 +30,7 @@ var (
 	user32                    = windows.NewLazySystemDLL("user32")
 	dwmapi                    = windows.NewLazySystemDLL("dwmapi")
 	procFindWindowW           = user32.NewProc("FindWindowW")
+	procGetWindowRect         = user32.NewProc("GetWindowRect")
 	procGetWindowLongPtrW     = user32.NewProc("GetWindowLongPtrW")
 	procSetWindowLongPtrW     = user32.NewProc("SetWindowLongPtrW")
 	procSetWindowPos          = user32.NewProc("SetWindowPos")
@@ -76,6 +77,21 @@ func WorkAreaForWindow(hwnd uintptr) WorkArea {
 	}
 	monitor, _, _ := procMonitorFromWindow.Call(hwnd, uintptr(monitorDefaultToNearest))
 	return workAreaForMonitor(monitor)
+}
+
+func WorkAreaForCurrentWindow(hwnd uintptr) WorkArea {
+	return WorkAreaForWindow(hwnd)
+}
+
+func WindowBounds(hwnd uintptr) (x, y, w, h int) {
+	if hwnd == 0 {
+		return 0, 0, 0, 0
+	}
+	var bounds rect
+	if ret, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ret == 0 {
+		return 0, 0, 0, 0
+	}
+	return int(bounds.left), int(bounds.top), int(bounds.right-bounds.left), int(bounds.bottom-bounds.top)
 }
 
 func WorkAreaForBounds(x, y, width, height int) WorkArea {

@@ -98,8 +98,10 @@ func (e *Engine) UpdateConfig(cfg Config) {
 	e.emitLocked()
 }
 
-// SetTalkDuration changes the duration used when a talk is started next.
-// A paused talk keeps its already calculated remaining time.
+// SetTalkDuration changes the configured talk duration.
+// While paused in talk, the remaining time is replaced with the new duration.
+// While paused in talk overtime, the engine resets to a fresh paused talk cycle.
+// Active running timers reject the change.
 func (e *Engine) SetTalkDuration(duration time.Duration) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -110,6 +112,19 @@ func (e *Engine) SetTalkDuration(duration time.Duration) error {
 		return ErrInvalidTransition
 	}
 	e.cfg.TalkDuration = duration
+	if e.isPaused {
+		switch e.phase {
+		case PhaseTalk:
+			e.pausedLeft = duration
+		case PhaseTalkOvertime:
+			e.phase = PhaseTalk
+			e.pausedLeft = duration
+			e.overtimeStartedAt = time.Time{}
+			e.lastAlertAt = time.Time{}
+			e.alertActive = false
+			e.reminderDueAt = time.Time{}
+		}
+	}
 	e.emitLocked()
 	return nil
 }

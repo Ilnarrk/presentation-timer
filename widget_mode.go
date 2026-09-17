@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	normalWindowMinWidth       = 800
-	normalWindowMinHeight      = 600
-	widgetQuickTimePanelHeight = 144
+	normalWindowMinWidth  = 800
+	normalWindowMinHeight = 600
 )
 
 type windowBounds struct {
@@ -18,6 +17,16 @@ type windowBounds struct {
 	y int
 	w int
 	h int
+}
+
+func (a *App) setWindowPositionAbsolute(absX, absY int) {
+	if a.ctx == nil {
+		return
+	}
+	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
+	work := windowmode.WorkAreaForWindow(hwnd)
+	relX, relY := windowmode.ToWailsPosition(work, absX, absY)
+	runtime.WindowSetPosition(a.ctx, relX, relY)
 }
 
 func (a *App) EnterWidgetMode() error {
@@ -68,7 +77,7 @@ func (a *App) EnterWidgetMode() error {
 		runtime.WindowSetMaxSize(a.ctx, widgetWidth, widgetHeight)
 	}
 	runtime.WindowSetSize(a.ctx, widgetWidth, widgetHeight)
-	runtime.WindowSetPosition(a.ctx, wx, wy)
+	a.setWindowPositionAbsolute(wx, wy)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.widgetMode = true
 	a.widgetQuickTimeOpen = false
@@ -84,14 +93,15 @@ func (a *App) SetWidgetQuickTimeOpen(open bool) error {
 		return nil
 	}
 
-	work := windowmode.WorkAreaForBounds(a.normalBounds.x, a.normalBounds.y, a.normalBounds.w, a.normalBounds.h)
+	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
+	work := windowmode.WorkAreaForWindow(hwnd)
 	x, y := runtime.WindowGetPosition(a.ctx)
 	w, h := runtime.WindowGetSize(a.ctx)
 	freePlacement := settings.NormalizeWidgetPlacement(a.settings.Get().WidgetPlacement) == settings.WidgetPlacementFree
 
 	if open {
 		a.widgetCompactBounds = windowBounds{w: w, h: h}
-		targetHeight := min(h+widgetQuickTimePanelHeight, work.Bottom-work.Top)
+		x, y, targetHeight := windowmode.QuickTimePanelPosition(work, x, y, w, h)
 		if freePlacement {
 			runtime.WindowSetMinSize(a.ctx, windowmode.WidgetMinWidth, windowmode.WidgetMinHeight)
 			runtime.WindowSetMaxSize(a.ctx, windowmode.WidgetMaxWidth, windowmode.WidgetMaxHeight)
@@ -100,10 +110,7 @@ func (a *App) SetWidgetQuickTimeOpen(open bool) error {
 			runtime.WindowSetMaxSize(a.ctx, w, targetHeight)
 		}
 		runtime.WindowSetSize(a.ctx, w, targetHeight)
-		if y+targetHeight > work.Bottom {
-			y = max(work.Top, work.Bottom-targetHeight)
-		}
-		runtime.WindowSetPosition(a.ctx, x, y)
+		a.setWindowPositionAbsolute(x, y)
 	} else {
 		compact := a.widgetCompactBounds
 		if compact.w <= 0 || compact.h <= 0 {
@@ -118,7 +125,7 @@ func (a *App) SetWidgetQuickTimeOpen(open bool) error {
 		}
 		runtime.WindowSetSize(a.ctx, compact.w, compact.h)
 		x, y = windowmode.ClampPosition(work, compact.w, compact.h, x, y)
-		runtime.WindowSetPosition(a.ctx, x, y)
+		a.setWindowPositionAbsolute(x, y)
 	}
 
 	a.widgetQuickTimeOpen = open
@@ -192,7 +199,7 @@ func (a *App) restoreMainWindowBounds() {
 	height := min(max(s.MainWindowHeight, normalWindowMinHeight), work.Bottom-work.Top)
 	x, y := windowmode.ClampPosition(work, width, height, s.MainWindowX, s.MainWindowY)
 	runtime.WindowSetSize(a.ctx, width, height)
-	runtime.WindowSetPosition(a.ctx, x, y)
+	a.setWindowPositionAbsolute(x, y)
 }
 
 func (a *App) ExitWidgetMode() error {
@@ -220,7 +227,7 @@ func (a *App) ExitWidgetMode() error {
 	runtime.WindowSetMaxSize(a.ctx, 0, 0)
 	runtime.WindowSetMinSize(a.ctx, minW, minH)
 	runtime.WindowSetSize(a.ctx, a.normalBounds.w, a.normalBounds.h)
-	runtime.WindowSetPosition(a.ctx, a.normalBounds.x, a.normalBounds.y)
+	a.setWindowPositionAbsolute(a.normalBounds.x, a.normalBounds.y)
 	runtime.WindowSetAlwaysOnTop(a.ctx, true)
 	a.widgetMode = false
 	a.widgetQuickTimeOpen = false

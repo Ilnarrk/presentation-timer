@@ -176,7 +176,7 @@ func TestPausePreservesRemaining(t *testing.T) {
 	}
 }
 
-func TestSetTalkDurationWhilePausedAffectsNextSpeakerOnly(t *testing.T) {
+func TestSetTalkDurationWhilePausedReplacesPausedLeft(t *testing.T) {
 	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	engine := NewEngineWithClock(testConfig(), clock)
 
@@ -188,16 +188,84 @@ func TestSetTalkDurationWhilePausedAffectsNextSpeakerOnly(t *testing.T) {
 	}
 
 	snap := engine.Snapshot()
-	if !snap.IsPaused || snap.RemainingSeconds != 480 || snap.TalkSeconds != 900 {
-		t.Fatalf("duration change altered paused talk: %+v", snap)
+	if !snap.IsPaused || snap.RemainingSeconds != 900 || snap.TalkSeconds != 900 {
+		t.Fatalf("duration change did not replace paused talk: %+v", snap)
+	}
+}
+
+func TestSetTalkDurationWhilePausedStartUsesNewDuration(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	clock.Advance(2 * time.Minute)
+	engine.Pause()
+	if err := engine.SetTalkDuration(15 * time.Minute); err != nil {
+		t.Fatalf("set talk duration: %v", err)
+	}
+	if err := engine.Start(); err != nil {
+		t.Fatalf("start: %v", err)
 	}
 
+	clock.Advance(1 * time.Minute)
+	engine.tick()
+	snap := engine.Snapshot()
+	if snap.RemainingSeconds != 840 || snap.TalkSeconds != 900 {
+		t.Fatalf("start did not use new duration: %+v", snap)
+	}
+}
+
+func TestSetTalkDurationWhilePausedNextSpeakerUsesNewDuration(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	clock.Advance(2 * time.Minute)
+	engine.Pause()
+	if err := engine.SetTalkDuration(15 * time.Minute); err != nil {
+		t.Fatalf("set talk duration: %v", err)
+	}
 	if err := engine.NextSpeaker(); err != nil {
 		t.Fatalf("next speaker: %v", err)
 	}
-	snap = engine.Snapshot()
+
+	snap := engine.Snapshot()
 	if snap.RemainingSeconds != 900 || snap.TalkSeconds != 900 {
 		t.Fatalf("next speaker did not use override: %+v", snap)
+	}
+}
+
+func TestSetTalkDurationWhilePausedOvertimeResetsTalkCycle(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	clock.Advance(10 * time.Minute)
+	engine.tick()
+	engine.Pause()
+
+	snap := engine.Snapshot()
+	if snap.Phase != PhaseTalkOvertime || !snap.IsPaused {
+		t.Fatalf("expected paused overtime, got %+v", snap)
+	}
+
+	if err := engine.SetTalkDuration(12 * time.Minute); err != nil {
+		t.Fatalf("set talk duration: %v", err)
+	}
+
+	snap = engine.Snapshot()
+	if snap.Phase != PhaseTalk || !snap.IsPaused || snap.RemainingSeconds != 720 || snap.TalkSeconds != 720 {
+		t.Fatalf("overtime pause was not reset to new talk duration: %+v", snap)
+	}
+}
+
+func TestSetTalkDurationWhileRunningRejected(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	if err := engine.SetTalkDuration(15 * time.Minute); err != ErrInvalidTransition {
+		t.Fatalf("expected invalid transition while running, got %v", err)
 	}
 }
 

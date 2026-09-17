@@ -59,3 +59,25 @@ func ClampPosition(workArea WorkArea, width, height, x, y int) (int, int) {
 	}
 	return x, y
 }
+
+// ToWailsPosition converts virtual-screen coordinates to Wails WindowSetPosition coords.
+func ToWailsPosition(work WorkArea, absX, absY int) (int, int) {
+	return absX - work.Left, absY - work.Top
+}
+
+// FromWailsPosition converts Wails WindowSetPosition coords to virtual-screen coordinates.
+func FromWailsPosition(work WorkArea, relX, relY int) (int, int) {
+	return relX + work.Left, relY + work.Top
+}
+
+// QuickTimePanelHeight is the native window height added when the widget duration panel opens.
+const QuickTimePanelHeight = 144
+
+// QuickTimePanelPosition returns absolute x,y after expanding the widget height for the panel.
+func QuickTimePanelPosition(work WorkArea, x, y, width, height int) (int, int, int) {
+	targetHeight := min(height+QuickTimePanelHeight, work.Bottom-work.Top)
+	if y+targetHeight > work.Bottom {
+		y = max(work.Top, work.Bottom-targetHeight)
+	}
+	return x, y, targetHeight
+}

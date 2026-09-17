@@ -102,7 +102,7 @@ func (a *App) startup(ctx context.Context) {
 		return x, y, w, h
 	})
 	conference.SetMainWindowMoveHandler(func(x, y int) {
-		runtime.WindowSetPosition(a.ctx, x, y)
+		a.setWindowPositionAbsolute(x, y)
 	})
 	a.conference = conference.NewController(func(state conference.State) {
 		runtime.EventsEmit(a.ctx, "conference:state", state)

@@ -230,6 +230,7 @@ export namespace settings {
 	    widgetPlacement: string;
 	    widgetTheme: string;
 	    widgetShape: string;
+	    widgetBackgroundTransparency: number;
 	    widgetFreeX: number;
 	    widgetFreeY: number;
 	    widgetFreeWidth: number;
@@ -280,6 +281,7 @@ export namespace settings {
 	        this.widgetPlacement = source["widgetPlacement"];
 	        this.widgetTheme = source["widgetTheme"];
 	        this.widgetShape = source["widgetShape"];
+	        this.widgetBackgroundTransparency = source["widgetBackgroundTransparency"];
 	        this.widgetFreeX = source["widgetFreeX"];
 	        this.widgetFreeY = source["widgetFreeY"];
 	        this.widgetFreeWidth = source["widgetFreeWidth"];

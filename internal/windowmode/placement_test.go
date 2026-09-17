@@ -61,3 +61,52 @@ func TestWidgetDefaultAndMinimumSizes(t *testing.T) {
 		t.Fatalf("unexpected maximum widget size: %dx%d", WidgetMaxWidth, WidgetMaxHeight)
 	}
 }
+
+func TestToWailsPositionLeftMonitor(t *testing.T) {
+	work := WorkArea{Left: -1920, Top: 0, Right: 0, Bottom: 1040}
+	absX, absY := -1500, 40
+
+	relX, relY := ToWailsPosition(work, absX, absY)
+	if relX != 420 || relY != 40 {
+		t.Fatalf("to wails: got %d,%d want 420,40", relX, relY)
+	}
+
+	backX, backY := FromWailsPosition(work, relX, relY)
+	if backX != absX || backY != absY {
+		t.Fatalf("from wails round-trip: got %d,%d want %d,%d", backX, backY, absX, absY)
+	}
+}
+
+func TestQuickTimePanelPositionKeepsWidgetOnScreen(t *testing.T) {
+	work := WorkArea{Left: -1920, Top: 0, Right: 0, Bottom: 1040}
+	x, y := -1500, 920
+	width, height := 400, 120
+
+	x, y, targetHeight := QuickTimePanelPosition(work, x, y, width, height)
+	if targetHeight != 264 {
+		t.Fatalf("target height: got %d want 264", targetHeight)
+	}
+	if y+targetHeight > work.Bottom {
+		t.Fatalf("panel extends below work area: y=%d height=%d bottom=%d", y, targetHeight, work.Bottom)
+	}
+	if x < work.Left || x+width > work.Right {
+		t.Fatalf("panel x out of bounds: x=%d width=%d work=%+v", x, width, work)
+	}
+
+	relX, relY := ToWailsPosition(work, x, y)
+	absX, absY := FromWailsPosition(work, relX, relY)
+	if absX != x || absY != y {
+		t.Fatalf("position round-trip: got %d,%d want %d,%d", absX, absY, x, y)
+	}
+}
+
+func TestQuickTimePanelCloseClampStaysOnLeftMonitor(t *testing.T) {
+	work := WorkArea{Left: -1920, Top: 0, Right: 0, Bottom: 1040}
+	x, y := -1500, 776
+	width := 400
+
+	x, y = ClampPosition(work, width, 120, x, y)
+	if x < work.Left || x+width > work.Right || y < work.Top || y+120 > work.Bottom {
+		t.Fatalf("closed widget out of bounds: %d,%d on work=%+v", x, y, work)
+	}
+}

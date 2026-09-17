@@ -158,6 +158,10 @@ const MAX_SPEAKERS = 50;
 const MIN_TIMER_SCALE = 80;
 const MAX_TIMER_SCALE = 140;
 const DEFAULT_TIMER_SCALE = 115;
+const MIN_WIDGET_DURATION = 1;
+const MAX_WIDGET_DURATION = 180;
+const MIN_WIDGET_BACKGROUND_TRANSPARENCY = 0;
+const MAX_WIDGET_BACKGROUND_TRANSPARENCY = 100;
 
 type WidgetPlacement = 'topRight' | 'topCenter' | 'topLeft' | 'free';
 type WidgetTheme = 'dark' | 'light' | 'green' | 'transparent';
@@ -345,13 +349,15 @@ function App() {
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
   const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
+  const [widgetBackgroundTransparency, setWidgetBackgroundTransparency] = useState(0);
   const [widgetColors, setWidgetColors] = useState<WidgetColorSettings>(EMPTY_WIDGET_COLORS);
   const [widgetColorPreviewKey, setWidgetColorPreviewKey] = useState<WidgetColorKey | null>(null);
   const [widgetMode, setWidgetMode] = useState(false);
   const [widgetDurationOpen, setWidgetDurationOpen] = useState(false);
-  const [widgetDurationDraft, setWidgetDurationDraft] = useState(10);
+  const [widgetDurationDraft, setWidgetDurationDraft] = useState('10');
   const [widgetDurationCustomOpen, setWidgetDurationCustomOpen] = useState(false);
   const [widgetDurationInvalid, setWidgetDurationInvalid] = useState(false);
+  const widgetDurationInputRef = useRef<HTMLInputElement>(null);
   const widgetDurationRef = useRef<HTMLDivElement>(null);
 
   const settingsLocked = snapshot.isRunning;
@@ -426,6 +432,7 @@ function App() {
       widgetPlacement: next?.widgetPlacement ?? widgetPlacement,
       widgetTheme: next?.widgetTheme ?? widgetTheme,
       widgetShape: next?.widgetShape ?? widgetShape,
+      widgetBackgroundTransparency: next?.widgetBackgroundTransparency ?? widgetBackgroundTransparency,
       widgetColorIdle: next?.widgetColorIdle ?? widgetColors.widgetColorIdle,
       widgetColorRunning: next?.widgetColorRunning ?? widgetColors.widgetColorRunning,
       widgetColorPaused: next?.widgetColorPaused ?? widgetColors.widgetColorPaused,
@@ -445,6 +452,7 @@ function App() {
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
+      setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, saved.widgetBackgroundTransparency ?? 0)));
       setWidgetColors({
         widgetColorIdle: saved.widgetColorIdle ?? '',
         widgetColorRunning: saved.widgetColorRunning ?? '',
@@ -481,6 +489,7 @@ function App() {
     widgetPlacement,
     widgetTheme,
     widgetShape,
+    widgetBackgroundTransparency,
     widgetColors,
   ]);
 
@@ -528,6 +537,7 @@ function App() {
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
       setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
+      setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, initialSettings.widgetBackgroundTransparency ?? 0)));
       setWidgetColors({
         widgetColorIdle: initialSettings.widgetColorIdle ?? '',
         widgetColorRunning: initialSettings.widgetColorRunning ?? '',
@@ -571,9 +581,13 @@ function App() {
     };
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setWidgetDurationOpen(false);
-        setWidgetDurationCustomOpen(false);
-        void SetWidgetQuickTimeOpen(false);
+        if (widgetDurationCustomOpen) {
+          setWidgetDurationCustomOpen(false);
+          setWidgetDurationInvalid(false);
+        } else {
+          setWidgetDurationOpen(false);
+          void SetWidgetQuickTimeOpen(false);
+        }
       }
     };
     document.addEventListener('pointerdown', handlePointerDown);
@@ -582,7 +596,13 @@ function App() {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [widgetDurationOpen]);
+  }, [widgetDurationOpen, widgetDurationCustomOpen]);
+
+  useEffect(() => {
+    if (!widgetDurationCustomOpen) return;
+    widgetDurationInputRef.current?.focus();
+    widgetDurationInputRef.current?.select();
+  }, [widgetDurationCustomOpen]);
 
   useEffect(() => {
     const unsubscribe = EventsOn('timer:state', (state: TimerSnapshot) => {
@@ -686,7 +706,7 @@ function App() {
 
   const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
   const openWidgetDuration = async () => {
-    setWidgetDurationDraft(widgetDurationMinutes);
+    setWidgetDurationDraft(String(widgetDurationMinutes));
     setWidgetDurationCustomOpen(false);
     setWidgetDurationInvalid(false);
     try {
@@ -703,15 +723,16 @@ function App() {
     setWidgetDurationInvalid(false);
     void SetWidgetQuickTimeOpen(false);
   };
-  const applyWidgetDuration = async (value = widgetDurationDraft) => {
-    if (value < 1 || value > 180) {
+  const applyWidgetDuration = async (value: string | number = widgetDurationDraft, keepOpen = false) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < MIN_WIDGET_DURATION || parsed > MAX_WIDGET_DURATION) {
       setWidgetDurationInvalid(true);
       return;
     }
     try {
-      await SetTalkDurationOverride(value);
-      setWidgetDurationDraft(value);
-      closeWidgetDuration();
+      await SetTalkDurationOverride(parsed);
+      setWidgetDurationDraft(String(parsed));
+      if (!keepOpen) closeWidgetDuration();
       setError('');
     } catch (err) {
       setError(String(err));
@@ -1056,6 +1077,22 @@ function App() {
   const ringLength = 854.5;
 
   const widgetColorStyle = useMemo(() => buildWidgetColorStyle(widgetColors), [widgetColors]);
+  const widgetTransparencyDisabled = widgetTheme === 'transparent';
+  const widgetTransparencyDisplay = widgetTransparencyDisabled
+    ? MAX_WIDGET_BACKGROUND_TRANSPARENCY
+    : widgetBackgroundTransparency;
+  const widgetTransparencyStyle = useMemo(() => {
+    if (widgetTheme === 'transparent') {
+      return {
+        '--widget-bg-alpha': '0',
+        '--widget-blur': '0px',
+      } as React.CSSProperties;
+    }
+    return {
+      '--widget-bg-alpha': String(1 - widgetBackgroundTransparency / 100),
+      '--widget-blur': `${Math.round(12 * (1 - widgetBackgroundTransparency / 100))}px`,
+    } as React.CSSProperties;
+  }, [widgetBackgroundTransparency, widgetTheme]);
   const widgetPreviewStatusClass = useMemo(
     () => widgetColorPreviewClass(widgetColorPreviewKey, statusClass),
     [widgetColorPreviewKey, statusClass],
@@ -1151,7 +1188,7 @@ function App() {
     return (
       <div
         className={`app-shell widget-mode ${statusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
-        style={{ ...widgetColorStyle, ...shellFontStyle }}
+        style={{ ...widgetColorStyle, ...widgetTransparencyStyle, ...shellFontStyle }}
       >
         <div className="widget-stack" ref={widgetDurationRef}>
           <div
@@ -1218,28 +1255,32 @@ function App() {
                   </button>
                 ))}
                 {!widgetDurationCustomOpen ? (
-                  <button type="button" className="quick-time-preset quick-time-custom-trigger" onClick={() => setWidgetDurationCustomOpen(true)}>
-                    <strong aria-hidden="true">{icon('edit')}</strong><span>Своё время</span>
+                  <button type="button" className={`quick-time-preset quick-time-custom-trigger${![5, 10, 15, 20].includes(widgetDurationMinutes) ? ' is-selected' : ''}`} onClick={() => setWidgetDurationCustomOpen(true)}>
+                    <strong>{![5, 10, 15, 20].includes(widgetDurationMinutes) ? widgetDurationMinutes : ''}</strong><span>{![5, 10, 15, 20].includes(widgetDurationMinutes) ? 'мин' : 'Своё время'}</span>
                   </button>
                 ) : (
-                  <form className="quick-time-custom" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
-                    <label htmlFor="widget-duration-minutes">Минуты</label>
+                  <form className="quick-time-preset quick-time-custom" onSubmit={(event) => { event.preventDefault(); void applyWidgetDuration(); }}>
                     <input
+                      ref={widgetDurationInputRef}
                       id="widget-duration-minutes"
                       type="number"
                       min="1"
-                      max="180"
+                      max={MAX_WIDGET_DURATION}
                       step="1"
                       value={widgetDurationDraft}
                       aria-invalid={widgetDurationInvalid}
                       onChange={(event) => {
-                        setWidgetDurationDraft(parseNumberInput(event.target.value, 180));
-                        setWidgetDurationInvalid(false);
+                        const next = event.target.value.replace(/\D/g, '').slice(0, 3);
+                        setWidgetDurationDraft(next);
+                        const parsed = Number(next);
+                        const valid = Number.isInteger(parsed) && parsed >= MIN_WIDGET_DURATION && parsed <= MAX_WIDGET_DURATION;
+                        setWidgetDurationInvalid(next !== '' && !valid);
+                        if (valid) void applyWidgetDuration(next, true);
                       }}
                       autoFocus
                     />
-                    <button type="submit">Готово</button>
-                    {widgetDurationInvalid && <span className="quick-time-error">1–180 мин</span>}
+                    <span>мин</span>
+                    {widgetDurationInvalid && <span className="quick-time-error">{MIN_WIDGET_DURATION}–{MAX_WIDGET_DURATION}</span>}
                   </form>
                 )}
               </div>
@@ -1733,7 +1774,7 @@ function App() {
               <div className={`widget-preview-stage preview-${widgetPlacement}`}>
                 <div
                   className={`widget-preview ${widgetPreviewStatusClass} ${timerFontClass(timerFont)} widget-theme-${widgetTheme} widget-shape-${widgetShape}`}
-                  style={{ ...widgetColorStyle, ...shellFontStyle }}
+                  style={{ ...widgetColorStyle, ...widgetTransparencyStyle, ...shellFontStyle }}
                   aria-label="Предпросмотр виджета"
                 >
                   <div className="widget-chrome">
@@ -1793,6 +1834,26 @@ function App() {
                   ))}
                 </div>
               </fieldset>
+
+              <label className="widget-transparency-control">
+                <span className="widget-transparency-label"><span>Прозрачность фона</span><output>{widgetTransparencyDisplay}%</output></span>
+                <span className="widget-transparency-scale" aria-hidden="true"><span>Матовое</span><span>Прозрачное</span></span>
+                <input
+                  type="range"
+                  min={MIN_WIDGET_BACKGROUND_TRANSPARENCY}
+                  max={MAX_WIDGET_BACKGROUND_TRANSPARENCY}
+                  step="1"
+                  value={widgetTransparencyDisplay}
+                  disabled={widgetTransparencyDisabled}
+                  aria-label="Прозрачность фона"
+                  onChange={async (event) => {
+                    if (widgetTheme === 'transparent') return;
+                    const next = Number(event.target.value);
+                    setWidgetBackgroundTransparency(next);
+                    await persistSettings({ widgetBackgroundTransparency: next });
+                  }}
+                />
+              </label>
 
               <fieldset className="widget-option-group">
                 <legend>Форма</legend>
