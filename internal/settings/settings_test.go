@@ -33,7 +33,7 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	if got.TimerDisplayMode != TimerDisplayModeRing || got.TimerFont != TimerFontSystem {
 		t.Fatalf("old settings did not receive timer display defaults: %+v", got)
 	}
-	if got.WidgetPlacement != WidgetPlacementTopRight {
+	if got.WidgetPlacement != WidgetPlacementFree {
 		t.Fatalf("old settings did not receive widgetPlacement default: %+v", got)
 	}
 }
@@ -371,5 +371,45 @@ func TestNormalizeWidgetPlacement(t *testing.T) {
 	}
 	if NormalizeWidgetPlacement(WidgetPlacementTopCenter) != WidgetPlacementTopCenter {
 		t.Fatal("topCenter placement should stay topCenter")
+	}
+}
+
+func TestWidgetQuickPresetsDefaultAndClamp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"talkMinutes":10}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := &Store{path: path, settings: Default()}
+	if err := store.load(); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get().WidgetQuickPresets
+	want := DefaultWidgetQuickPresets()
+	if len(got) != 4 || got[0] != want[0] || got[3] != want[3] {
+		t.Fatalf("missing presets default: %+v", got)
+	}
+
+	input := Default()
+	input.WidgetQuickPresets = []DurationPreset{
+		{Minutes: 0, Seconds: 45},
+		{Minutes: 12, Seconds: 30},
+		{Minutes: -1, Seconds: 90},
+		{Minutes: 180, Seconds: 20},
+	}
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got = store.Get().WidgetQuickPresets
+	if got[0] != (DurationPreset{Minutes: 0, Seconds: 45}) {
+		t.Fatalf("0:45 should stay: %+v", got[0])
+	}
+	if got[1] != (DurationPreset{Minutes: 12, Seconds: 30}) {
+		t.Fatalf("12:30 should stay: %+v", got[1])
+	}
+	if got[2].Minutes < 0 || got[2].Seconds > 59 {
+		t.Fatalf("invalid preset was not clamped: %+v", got[2])
+	}
+	if got[3] != (DurationPreset{Minutes: 180, Seconds: 0}) {
+		t.Fatalf("180 minutes should drop extra seconds: %+v", got[3])
 	}
 }

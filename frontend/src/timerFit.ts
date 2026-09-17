@@ -1,4 +1,6 @@
 const MIN_FONT_PX = 24;
+const WIDTH_FIT_SAFETY = 0.94;
+const OVERTIME_WIDTH_FACTOR = 0.96;
 const WORST_CASE_NORMAL = '88:88';
 const WORST_CASE_OVERTIME = '+88:88';
 const WIDGET_WORST_CASE = '+88:88';
@@ -19,10 +21,26 @@ type FitTextToBoundsOptions = {
   maxHeight: number;
   targetPx: number;
   cssVarName: string;
+  widthSafety?: number;
+  intrinsic?: boolean;
 };
 
-function elementFits(element: HTMLElement, maxWidth: number, maxHeight: number) {
-  return element.scrollWidth <= maxWidth + 1 && element.scrollHeight <= maxHeight + 1;
+function elementFits(
+  element: HTMLElement,
+  maxWidth: number,
+  maxHeight: number,
+  widthSafety: number,
+  intrinsic: boolean,
+) {
+  const safeWidth = maxWidth * widthSafety;
+  if (intrinsic) {
+    return element.offsetWidth <= safeWidth + 1 && element.offsetHeight <= maxHeight + 1;
+  }
+  return element.scrollWidth <= safeWidth + 1 && element.scrollHeight <= maxHeight + 1;
+}
+
+export function applyWidthFitLimit(maxWidth: number, hasOvertime: boolean): number {
+  return hasOvertime ? maxWidth * OVERTIME_WIDTH_FACTOR : maxWidth;
 }
 
 export function fitTextToBounds({
@@ -33,13 +51,38 @@ export function fitTextToBounds({
   maxHeight,
   targetPx,
   cssVarName,
+  widthSafety = WIDTH_FIT_SAFETY,
+  intrinsic = false,
 }: FitTextToBoundsOptions): number {
   container.style.removeProperty(cssVarName);
   element.style.removeProperty('font-size');
 
   const originalText = element.textContent ?? '';
-  element.textContent = sampleText;
-
+  const probe = intrinsic ? (element.cloneNode(false) as HTMLElement) : element;
+  if (intrinsic) {
+    const computed = getComputedStyle(element);
+    probe.textContent = sampleText;
+    probe.style.position = 'absolute';
+    probe.style.left = '0';
+    probe.style.top = '0';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.display = 'inline-block';
+    probe.style.width = 'auto';
+    probe.style.height = 'auto';
+    probe.style.maxWidth = 'none';
+    probe.style.flex = 'none';
+    probe.style.overflow = 'hidden';
+    probe.style.whiteSpace = 'nowrap';
+    probe.style.lineHeight = '1';
+    probe.style.fontFamily = computed.fontFamily;
+    probe.style.fontWeight = computed.fontWeight;
+    probe.style.letterSpacing = computed.letterSpacing;
+    probe.style.fontVariantNumeric = computed.fontVariantNumeric;
+    container.appendChild(probe);
+  } else {
+    probe.textContent = sampleText;
+  }
   const maxPx = Math.max(MIN_FONT_PX, Math.floor(targetPx));
   let lo = MIN_FONT_PX;
   let hi = maxPx;
@@ -47,8 +90,8 @@ export function fitTextToBounds({
 
   while (lo <= hi) {
     const mid = Math.floor((lo + hi) / 2);
-    element.style.fontSize = `${mid}px`;
-    if (elementFits(element, maxWidth, maxHeight)) {
+    probe.style.fontSize = `${mid}px`;
+    if (elementFits(probe, maxWidth, maxHeight, widthSafety, intrinsic)) {
       best = mid;
       lo = mid + 1;
     } else {
@@ -56,8 +99,12 @@ export function fitTextToBounds({
     }
   }
 
-  element.textContent = originalText;
-  element.style.removeProperty('font-size');
+  if (intrinsic) {
+    probe.remove();
+  } else {
+    element.textContent = originalText;
+    element.style.removeProperty('font-size');
+  }
   container.style.setProperty(cssVarName, `${best}px`);
   return best;
 }

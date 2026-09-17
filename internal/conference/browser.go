@@ -634,8 +634,8 @@ const mediaBridgeScript = `(function __timerInstallMediaBridge() {
     idle: 'Ожидание',
     talk: 'Доклад',
     talkOvertime: 'Доклад — просрочка',
-    questions: 'Вопросы',
-    questionsOvertime: 'Вопросы — просрочка',
+    questions: 'Обсуждение',
+    questionsOvertime: 'Обсуждение — просрочка',
     completed: 'Завершено'
   };
   const formatClock = (totalSeconds) => {

@@ -1,9 +1,10 @@
 import { type RefObject, useLayoutEffect, useRef } from 'react';
-import { TIMER_FIT, fitTextToBounds, getWidgetWorstCaseTimeText, measureSiblingHeight } from './timerFit';
+import { TIMER_FIT, fitTextToBounds, getWorstCaseTimeText } from './timerFit';
 
 type UseWidgetTimerFitOptions = {
   fontId: string;
   active: boolean;
+  hasOvertime?: boolean;
 };
 
 type WidgetTimerFitRefs = {
@@ -14,6 +15,7 @@ type WidgetTimerFitRefs = {
 export function useWidgetTimerFit({
   fontId,
   active,
+  hasOvertime = false,
 }: UseWidgetTimerFitOptions): WidgetTimerFitRefs {
   const bodyRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<HTMLSpanElement>(null);
@@ -29,24 +31,20 @@ export function useWidgetTimerFit({
       return undefined;
     }
 
-    const sampleText = getWidgetWorstCaseTimeText();
+    const sampleText = getWorstCaseTimeText(hasOvertime);
 
     const measure = () => {
       body.style.removeProperty(TIMER_FIT.WIDGET_CSS_VAR);
       timer.style.removeProperty('font-size');
 
-      const bodyRect = body.getBoundingClientRect();
-      if (bodyRect.width <= 0 || bodyRect.height <= 0) {
+      const slot = timer.getBoundingClientRect();
+      if (slot.width <= 0 || slot.height <= 0) {
         return;
       }
 
-      const style = getComputedStyle(body);
-      const paddingX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
-      const paddingY = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
-      const reservedHeight = measureSiblingHeight(body, timer);
-      const maxWidth = Math.max(TIMER_FIT.MIN_FONT_PX, bodyRect.width - paddingX);
-      const maxHeight = Math.max(TIMER_FIT.MIN_FONT_PX, bodyRect.height - paddingY - reservedHeight);
-      const targetPx = Math.min(maxHeight * 0.88, maxWidth / Math.max(sampleText.length * 0.52, 4));
+      const maxWidth = slot.width;
+      const maxHeight = slot.height;
+      const targetPx = maxHeight;
 
       fitTextToBounds({
         element: timer,
@@ -56,6 +54,8 @@ export function useWidgetTimerFit({
         maxHeight,
         targetPx,
         cssVarName: TIMER_FIT.WIDGET_CSS_VAR,
+        widthSafety: 1,
+        intrinsic: true,
       });
     };
 
@@ -65,7 +65,7 @@ export function useWidgetTimerFit({
     document.fonts?.ready.then(measure).catch(() => undefined);
 
     return () => observer.disconnect();
-  }, [fontId, active]);
+  }, [fontId, active, hasOvertime]);
 
   return { bodyRef, timerRef };
 }

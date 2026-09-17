@@ -143,8 +143,8 @@ const phaseLabels: Record<Phase, string> = {
   idle: 'Ожидание',
   talk: 'Доклад',
   talkOvertime: 'Доклад — просрочка',
-  questions: 'Вопросы',
-  questionsOvertime: 'Вопросы — просрочка',
+  questions: 'Обсуждение',
+  questionsOvertime: 'Обсуждение — просрочка',
   completed: 'Завершено',
 };
 
@@ -161,12 +161,131 @@ function formatOvertime(totalSeconds: number): string {
   return `+${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
+function getWidgetStatusLabel(phase: Phase, durationOpen: boolean, isTicking: boolean): string {
+  if (durationOpen) {
+    return 'Регламент';
+  }
+  if (phase === 'questions' || phase === 'questionsOvertime') {
+    return 'Обсуждение';
+  }
+  if (isTicking && (phase === 'talk' || phase === 'talkOvertime')) {
+    return 'Доклад';
+  }
+  return 'Регламент';
+}
+
+const MAX_WIDGET_DURATION = 180;
+
+type DurationPreset = { minutes: number; seconds: number };
+
+const DEFAULT_WIDGET_QUICK_PRESETS: DurationPreset[] = [
+  { minutes: 5, seconds: 0 },
+  { minutes: 10, seconds: 0 },
+  { minutes: 15, seconds: 0 },
+  { minutes: 20, seconds: 0 },
+];
+
+function durationPresetTotal(preset: DurationPreset): number {
+  return preset.minutes * 60 + preset.seconds;
+}
+
+function normalizeDurationPreset(preset: DurationPreset): DurationPreset {
+  let minutes = Math.max(0, Math.min(MAX_WIDGET_DURATION, Math.trunc(preset.minutes) || 0));
+  let seconds = Math.max(0, Math.min(59, Math.trunc(preset.seconds) || 0));
+  if (minutes === MAX_WIDGET_DURATION) {
+    seconds = 0;
+  }
+  if (minutes === 0 && seconds === 0) {
+    seconds = 1;
+  }
+  return { minutes, seconds };
+}
+
+function normalizeWidgetQuickPresets(value: unknown): DurationPreset[] {
+  const source = Array.isArray(value) ? value : [];
+  return DEFAULT_WIDGET_QUICK_PRESETS.map((fallback, index) => {
+    const item = source[index] as DurationPreset | undefined;
+    if (!item) {
+      return fallback;
+    }
+    return normalizeDurationPreset({
+      minutes: Number(item.minutes) || 0,
+      seconds: Number(item.seconds) || 0,
+    });
+  });
+}
+
+function parseDurationInput(raw: string): DurationPreset | null {
+  const value = raw.trim();
+  if (value === '' || value.endsWith(':')) {
+    return null;
+  }
+  if (value.includes(':')) {
+    const parts = value.split(':');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const minutes = Number(parts[0]);
+    const seconds = Number(parts[1]);
+    if (!Number.isInteger(minutes) || !Number.isInteger(seconds)) {
+      return null;
+    }
+    return { minutes, seconds };
+  }
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes)) {
+    return null;
+  }
+  return { minutes, seconds: 0 };
+}
+
+function isValidTalkDuration(preset: DurationPreset): boolean {
+  const total = durationPresetTotal(preset);
+  return preset.minutes >= 0 &&
+    preset.minutes <= MAX_WIDGET_DURATION &&
+    preset.seconds >= 0 &&
+    preset.seconds <= 59 &&
+    total >= 1 &&
+    total <= MAX_WIDGET_DURATION * 60;
+}
+
+function formatDurationDraft(totalSeconds: number): string {
+  const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
+  const seconds = Math.max(0, totalSeconds) % 60;
+  if (seconds === 0) {
+    return String(minutes);
+  }
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function sanitizeDurationDraft(raw: string): string {
+  let colonUsed = false;
+  let out = '';
+  for (const ch of raw) {
+    if (ch >= '0' && ch <= '9') {
+      out += ch;
+    } else if (ch === ':' && !colonUsed) {
+      out += ':';
+      colonUsed = true;
+    }
+  }
+  return out.slice(0, 6);
+}
+
+function formatPresetButton(preset: DurationPreset): { primary: string; secondary: string } {
+  if (preset.seconds === 0) {
+    return { primary: String(preset.minutes), secondary: 'мин' };
+  }
+  if (preset.minutes === 0) {
+    return { primary: String(preset.seconds), secondary: 'сек' };
+  }
+  return { primary: `${preset.minutes}:${String(preset.seconds).padStart(2, '0')}`, secondary: '' };
+}
+
 const MAX_SPEAKERS = 50;
 const MIN_TIMER_SCALE = 80;
 const MAX_TIMER_SCALE = 140;
 const DEFAULT_TIMER_SCALE = 115;
-const MIN_WIDGET_DURATION = 1;
-const MAX_WIDGET_DURATION = 180;
 const MIN_WIDGET_BACKGROUND_TRANSPARENCY = 0;
 const MAX_WIDGET_BACKGROUND_TRANSPARENCY = 100;
 
@@ -397,10 +516,11 @@ function App() {
   const [timerScalePercent, setTimerScalePercent] = useState(DEFAULT_TIMER_SCALE);
   const [timerDisplayMode, setTimerDisplayMode] = useState<TimerDisplayMode>('ring');
   const [timerFont, setTimerFont] = useState<TimerFont>('system');
-  const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('topRight');
+  const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('free');
   const [appTheme, setAppTheme] = useState<AppTheme>('dark');
   const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
+  const [widgetQuickPresets, setWidgetQuickPresets] = useState<DurationPreset[]>(DEFAULT_WIDGET_QUICK_PRESETS);
   const [widgetBackgroundTransparency, setWidgetBackgroundTransparency] = useState(0);
   const [widgetColors, setWidgetColors] = useState<WidgetColorSettings>(EMPTY_WIDGET_COLORS);
   const [widgetColorPreviewKey, setWidgetColorPreviewKey] = useState<WidgetColorKey | null>(null);
@@ -490,6 +610,7 @@ function App() {
       widgetColorRunning: next?.widgetColorRunning ?? widgetColors.widgetColorRunning,
       widgetColorPaused: next?.widgetColorPaused ?? widgetColors.widgetColorPaused,
       widgetColorOvertime: next?.widgetColorOvertime ?? widgetColors.widgetColorOvertime,
+      widgetQuickPresets: next?.widgetQuickPresets ?? widgetQuickPresets,
     });
 
     setSaving(true);
@@ -502,7 +623,7 @@ function App() {
       setTimerScalePercent(saved.timerScalePercent || DEFAULT_TIMER_SCALE);
       setTimerDisplayMode((saved.timerDisplayMode as TimerDisplayMode) || 'ring');
       setTimerFont((saved.timerFont as TimerFont) || 'system');
-      setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'topRight');
+      setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'free');
       setAppTheme((saved.appTheme as AppTheme) || 'dark');
       setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
@@ -513,6 +634,7 @@ function App() {
         widgetColorPaused: saved.widgetColorPaused ?? '',
         widgetColorOvertime: saved.widgetColorOvertime ?? '',
       });
+      setWidgetQuickPresets(normalizeWidgetQuickPresets(saved.widgetQuickPresets));
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
       setSettingsError('');
@@ -550,6 +672,7 @@ function App() {
     widgetShape,
     widgetBackgroundTransparency,
     widgetColors,
+    widgetQuickPresets,
   ]);
 
   useEffect(() => {
@@ -598,7 +721,7 @@ function App() {
       setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
       setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
       setTimerFont((initialSettings.timerFont as TimerFont) || 'system');
-      setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'topRight');
+      setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'free');
       setAppTheme((initialSettings.appTheme as AppTheme) || 'dark');
       setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
@@ -609,6 +732,7 @@ function App() {
         widgetColorPaused: initialSettings.widgetColorPaused ?? '',
         widgetColorOvertime: initialSettings.widgetColorOvertime ?? '',
       });
+      setWidgetQuickPresets(normalizeWidgetQuickPresets(initialSettings.widgetQuickPresets));
       setWidgetMode(await IsWidgetMode());
       setSounds(initialSounds as SoundOption[]);
       setDevices(initialDevices as AudioDevice[]);
@@ -767,7 +891,17 @@ function App() {
     return 'status-idle';
   }, [snapshot]);
 
-  const widgetDurationMinutes = Math.max(1, Math.round(snapshot.talkSeconds / 60));
+  const widgetStatusLabel = useMemo(
+    () => getWidgetStatusLabel(
+      snapshot.phase,
+      widgetDurationOpen,
+      snapshot.isRunning && !snapshot.isPaused,
+    ),
+    [snapshot.phase, snapshot.isRunning, snapshot.isPaused, widgetDurationOpen],
+  );
+
+  const widgetDurationSeconds = snapshot.talkSeconds;
+  const widgetPresetSelected = widgetQuickPresets.some((preset) => durationPresetTotal(preset) === widgetDurationSeconds);
   const closeWidgetDuration = useCallback(() => {
     setWidgetDurationOpen(false);
     setWidgetDurationCustomOpen(false);
@@ -809,7 +943,7 @@ function App() {
   };
 
   const openWidgetDuration = async () => {
-    setWidgetDurationDraft(String(widgetDurationMinutes));
+    setWidgetDurationDraft(formatDurationDraft(widgetDurationSeconds));
     setWidgetDurationCustomOpen(false);
     setWidgetDurationInvalid(false);
     setWidgetDurationError('');
@@ -834,19 +968,26 @@ function App() {
     }
   }, [widgetDurationOpen, snapshot.isRunning, snapshot.isPaused, closeWidgetDuration]);
 
-  const applyWidgetDuration = async (value: string | number = widgetDurationDraft, keepOpen = false) => {
-    const parsed = Number(value);
-    if (!Number.isInteger(parsed) || parsed < MIN_WIDGET_DURATION || parsed > MAX_WIDGET_DURATION) {
+  const applyWidgetDuration = async (value: string | number | DurationPreset = widgetDurationDraft, keepOpen = false) => {
+    let parsed: DurationPreset | null = null;
+    if (typeof value === 'number') {
+      parsed = { minutes: value, seconds: 0 };
+    } else if (typeof value === 'object') {
+      parsed = value;
+    } else {
+      parsed = parseDurationInput(value);
+    }
+    if (!parsed || !isValidTalkDuration(parsed)) {
       setWidgetDurationInvalid(true);
       return;
     }
     try {
-      await SetTalkDurationOverride(parsed);
-      setTalkMinutes(parsed);
-      setTalkSecondsPart(0);
-      setWidgetDurationDraft(String(parsed));
+      await SetTalkDurationOverride(parsed.minutes, parsed.seconds);
+      setTalkMinutes(parsed.minutes);
+      setTalkSecondsPart(parsed.seconds);
+      setWidgetDurationDraft(formatDurationDraft(durationPresetTotal(parsed)));
       setWidgetDurationInvalid(false);
-      await persistSettings({ talkMinutes: parsed, talkSeconds: 0 });
+      await persistSettings({ talkMinutes: parsed.minutes, talkSeconds: parsed.seconds });
       if (!keepOpen) closeWidgetDuration();
       setWidgetDurationError('');
     } catch (err) {
@@ -1239,10 +1380,12 @@ function App() {
   const { bodyRef: widgetBodyRef, timerRef: widgetTimerRef } = useWidgetTimerFit({
     fontId: timerFont,
     active: widgetMode,
+    hasOvertime: timerHasOvertime,
   });
   const { bodyRef: widgetPreviewBodyRef, timerRef: widgetPreviewTimerRef } = useWidgetTimerFit({
     fontId: timerFont,
     active: settingsOpen && settingsTab === 'interface',
+    hasOvertime: timerHasOvertime,
   });
 
   const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check' | 'sun' | 'moon') => {
@@ -1332,7 +1475,8 @@ function App() {
             </button>
           </div>
           <div className="widget-body" ref={widgetBodyRef}>
-            <span className="widget-timer" ref={widgetTimerRef} aria-label={`${phaseLabels[snapshot.phase]}: ${displayTime}`}>{displayTime}</span>
+            <span className="widget-phase">{widgetStatusLabel}</span>
+            <span className="widget-timer" ref={widgetTimerRef} aria-label={`${widgetStatusLabel}: ${displayTime}`}>{displayTime}</span>
             <div className="widget-duration-control">
               <button
                 className="widget-duration-trigger"
@@ -1341,7 +1485,7 @@ function App() {
                 disabled={widgetIsRunning}
                 aria-expanded={widgetDurationOpen}
                 aria-controls="quick-time-panel"
-                aria-label={`Время следующего докладчика: ${widgetDurationMinutes} минут`}
+                aria-label={`Время следующего докладчика: ${formatClock(widgetDurationSeconds)}`}
               >
                 <span className="widget-duration-mark" aria-hidden="true" />
               </button>
@@ -1359,26 +1503,30 @@ function App() {
           {widgetDurationOpen && (
             <section id="quick-time-panel" className="quick-time-panel" aria-label="Время следующего докладчика">
               <header className="quick-time-header">
-                <span className="quick-time-title">{icon('clock')} Следующий докладчик</span>
+                <span className="quick-time-title">{icon('clock')} Регламент</span>
                 <span className="quick-time-hints">Enter — применить&nbsp;&nbsp; Esc — закрыть</span>
               </header>
               {widgetDurationError && <p className="quick-time-panel-error" role="alert">{widgetDurationError}</p>}
               <div className="quick-time-presets" role="group" aria-label="Быстрый выбор времени">
-                {[5, 10, 15, 20].map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    className={`quick-time-preset${widgetDurationMinutes === minutes ? ' is-selected' : ''}`}
-                    aria-pressed={widgetDurationMinutes === minutes}
-                    onClick={() => void applyWidgetDuration(minutes)}
-                  >
-                    <strong>{minutes}</strong><span>мин</span>
-                  </button>
-                ))}
+                {widgetQuickPresets.map((preset, index) => {
+                  const label = formatPresetButton(preset);
+                  const selected = durationPresetTotal(preset) === widgetDurationSeconds;
+                  return (
+                    <button
+                      key={`${preset.minutes}-${preset.seconds}-${index}`}
+                      type="button"
+                      className={`quick-time-preset${selected ? ' is-selected' : ''}`}
+                      aria-pressed={selected}
+                      onClick={() => void applyWidgetDuration(preset)}
+                    >
+                      <strong>{label.primary}</strong>{label.secondary ? <span>{label.secondary}</span> : null}
+                    </button>
+                  );
+                })}
                 {!widgetDurationCustomOpen ? (
-                  <button type="button" className={`quick-time-preset quick-time-custom-trigger${![5, 10, 15, 20].includes(widgetDurationMinutes) ? ' is-selected' : ''}`} onClick={() => setWidgetDurationCustomOpen(true)}>
-                    {![5, 10, 15, 20].includes(widgetDurationMinutes) ? (
-                      <><strong>{widgetDurationMinutes}</strong><span>мин</span></>
+                  <button type="button" className={`quick-time-preset quick-time-custom-trigger${!widgetPresetSelected ? ' is-selected' : ''}`} onClick={() => setWidgetDurationCustomOpen(true)}>
+                    {!widgetPresetSelected ? (
+                      <><strong>{formatDurationDraft(widgetDurationSeconds)}</strong><span>{widgetDurationSeconds % 60 === 0 ? 'мин' : ''}</span></>
                     ) : (
                       <span>Своё время</span>
                     )}
@@ -1389,23 +1537,26 @@ function App() {
                       ref={widgetDurationInputRef}
                       id="widget-duration-minutes"
                       type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
+                      inputMode="decimal"
                       value={widgetDurationDraft}
                       aria-invalid={widgetDurationInvalid}
+                      placeholder="0:59"
                       onChange={(event) => {
-                        const next = event.target.value.replace(/\D/g, '').slice(0, 3);
+                        const next = sanitizeDurationDraft(event.target.value);
                         setWidgetDurationDraft(next);
-                        const parsed = Number(next);
-                        const valid = next === '' || (Number.isInteger(parsed) && parsed >= MIN_WIDGET_DURATION && parsed <= MAX_WIDGET_DURATION);
-                        setWidgetDurationInvalid(next !== '' && !valid);
+                        if (next === '' || next.endsWith(':')) {
+                          setWidgetDurationInvalid(false);
+                          return;
+                        }
+                        const parsed = parseDurationInput(next);
+                        setWidgetDurationInvalid(!parsed || !isValidTalkDuration(parsed));
                       }}
                       autoFocus
                     />
                     <button type="submit" className="quick-time-confirm" aria-label="Применить время">
                       {icon('check')}
                     </button>
-                    {widgetDurationInvalid && <span className="quick-time-error">{MIN_WIDGET_DURATION}–{MAX_WIDGET_DURATION}</span>}
+                    {widgetDurationInvalid && <span className="quick-time-error">0:01–{MAX_WIDGET_DURATION}:00</span>}
                   </form>
                 )}
               </div>
@@ -1516,7 +1667,7 @@ function App() {
                 <h2 id="session-title">Сессия</h2>
                 {sessionState.active && (
                   <p className="session-duration-hint">
-                    Доклад {formatClock(snapshot.talkSeconds)} · Вопросы {formatClock(snapshot.questionsSeconds)}
+                    Доклад {formatClock(snapshot.talkSeconds)} · Обсуждение {formatClock(snapshot.questionsSeconds)}
                   </p>
                 )}
               </div>
@@ -1571,12 +1722,12 @@ function App() {
                           disabled={settingsLocked}
                           onChange={(e) => setSessionUseDefaultQuestions(e.target.checked)}
                         />
-                        <span>Вопросы — как в настройках</span>
+                        <span>Обсуждение — как в настройках</span>
                       </label>
                       {sessionUseDefaultQuestions ? (
                         <p className="settings-hint">из настроек: {formatClock(questionsMinutes * 60 + questionsSecondsPart)}</p>
                       ) : (
-                        <label>Вопросы<div className="duration-inputs">
+                        <label>Обсуждение<div className="duration-inputs">
                           <NumericInput max={60} value={sessionQuestionsMinutes} disabled={settingsLocked} onChange={setSessionQuestionsMinutes} /><span>мин</span>
                           <NumericInput max={59} value={sessionQuestionsSeconds} disabled={settingsLocked} onChange={setSessionQuestionsSeconds} /><span>сек</span>
                         </div></label>
@@ -1944,7 +2095,10 @@ function App() {
                       <span className="widget-secondary widget-secondary-compact preview-control">{icon('next')}</span>
                       <span className="widget-secondary widget-secondary-compact preview-control">{icon('questions')}</span>
                     </div>
-                    <div className="widget-body" ref={widgetPreviewBodyRef}><span className="widget-timer" ref={widgetPreviewTimerRef}>{displayTime}</span></div>
+                    <div className="widget-body" ref={widgetPreviewBodyRef}>
+                      <span className="widget-phase">{widgetStatusLabel}</span>
+                      <span className="widget-timer" ref={widgetPreviewTimerRef}>{displayTime}</span>
+                    </div>
                     <span className="widget-restore preview-restore" aria-hidden="true">{icon('restore')}</span>
                   </div>
                 </div>
@@ -2040,7 +2194,7 @@ function App() {
                 <NumericInput max={180} value={talkMinutes} disabled={settingsLocked} onChange={setTalkMinutes} onBlur={() => persistSettings()} /><span>мин</span>
                 <NumericInput max={59} value={talkSecondsPart} disabled={settingsLocked} onChange={setTalkSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
-              <label>Вопросы<div className="duration-inputs">
+              <label>Обсуждение<div className="duration-inputs">
                 <NumericInput max={60} value={questionsMinutes} disabled={settingsLocked} onChange={setQuestionsMinutes} onBlur={() => persistSettings()} /><span>мин</span>
                 <NumericInput max={59} value={questionsSecondsPart} disabled={settingsLocked} onChange={setQuestionsSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
@@ -2048,6 +2202,32 @@ function App() {
                 <NumericInput max={60} value={reminderMinutes} disabled={settingsLocked} onChange={setReminderMinutes} onBlur={() => persistSettings()} /><span>мин</span>
                 <NumericInput max={59} value={reminderSecondsPart} disabled={settingsLocked} onChange={setReminderSecondsPart} onBlur={() => persistSettings()} /><span>сек</span>
               </div></label>
+              <h3 className="settings-subheading">Быстрый выбор в виджете</h3>
+              <p className="settings-hint">Четыре кнопки в меню виджета. Можно задать минуты и секунды.</p>
+              {widgetQuickPresets.map((preset, index) => (
+                <label key={index}>Вариант {index + 1}<div className="duration-inputs">
+                  <NumericInput
+                    max={180}
+                    value={preset.minutes}
+                    disabled={settingsLocked}
+                    onChange={(minutes) => {
+                      const next = widgetQuickPresets.map((item, itemIndex) => itemIndex === index ? normalizeDurationPreset({ ...item, minutes }) : item);
+                      setWidgetQuickPresets(next);
+                    }}
+                    onBlur={() => persistSettings()}
+                  /><span>мин</span>
+                  <NumericInput
+                    max={59}
+                    value={preset.seconds}
+                    disabled={settingsLocked}
+                    onChange={(seconds) => {
+                      const next = widgetQuickPresets.map((item, itemIndex) => itemIndex === index ? normalizeDurationPreset({ ...item, seconds }) : item);
+                      setWidgetQuickPresets(next);
+                    }}
+                    onBlur={() => persistSettings()}
+                  /><span>сек</span>
+                </div></label>
+              ))}
             </div>
 
             <div className="settings-section" id="settings-panel-sound" role="tabpanel" aria-labelledby="settings-tab-sound" hidden={settingsTab !== 'sound'}>

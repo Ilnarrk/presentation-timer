@@ -35,6 +35,14 @@ func TestWidgetPositionFreeDefaultsToTopRight(t *testing.T) {
 	}
 }
 
+func TestClampPositionKeepsSavedOrigin(t *testing.T) {
+	work := WorkArea{Left: 0, Top: 0, Right: 1920, Bottom: 1080}
+	x, y := ClampPosition(work, WidgetWidth, WidgetHeight, 0, 0)
+	if x != 0 || y != 0 {
+		t.Fatalf("saved origin should stay: got %d,%d", x, y)
+	}
+}
+
 func TestClampPosition(t *testing.T) {
 	work := WorkArea{Left: 0, Top: 0, Right: 400, Bottom: 300}
 	x, y := ClampPosition(work, WidgetWidth, WidgetHeight, 500, 500)

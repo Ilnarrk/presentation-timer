@@ -68,6 +68,9 @@ func (a *App) EnterWidgetMode() error {
 		widgetHeight = min(widgetHeight, work.Bottom-work.Top)
 	}
 	wx, wy := windowmode.WidgetPositionForSize(work, s.WidgetPlacement, s.WidgetFreeX, s.WidgetFreeY, widgetWidth, widgetHeight)
+	if freePlacement && (s.WidgetFreeWidth > 0 || s.WidgetFreeHeight > 0) {
+		wx, wy = windowmode.ClampPosition(work, widgetWidth, widgetHeight, s.WidgetFreeX, s.WidgetFreeY)
+	}
 
 	windowmode.SetFrameless(hwnd, true, freePlacement)
 	// CSS border-radius handles widget shape; DWM rounding causes a double border.
@@ -146,6 +149,13 @@ func (a *App) saveWidgetBounds() {
 	}
 	x, y := runtime.WindowGetPosition(a.ctx)
 	w, h := runtime.WindowGetSize(a.ctx)
+	hwnd := windowmode.FindWindowByTitle(a.windowTitle)
+	if absX, absY, absW, absH := windowmode.WindowBounds(hwnd); absW > 0 && absH > 0 {
+		x, y, w, h = absX, absY, absW, absH
+	} else {
+		work := windowmode.WorkAreaForWindow(hwnd)
+		x, y = windowmode.FromWailsPosition(work, x, y)
+	}
 	if a.widgetQuickTimeOpen && a.widgetCompactBounds.w > 0 && a.widgetCompactBounds.h > 0 {
 		w = a.widgetCompactBounds.w
 		h = a.widgetCompactBounds.h

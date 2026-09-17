@@ -1,6 +1,7 @@
 import { type RefObject, useLayoutEffect, useRef } from 'react';
 import {
   TIMER_FIT,
+  applyWidthFitLimit,
   fitTextToBounds,
   getWorstCaseTimeText,
   measureSiblingHeight,
@@ -70,7 +71,10 @@ export function useTimerDisplayFit({
           return;
         }
 
-        const maxWidth = ringSize * TIMER_FIT.RING_CONTENT_WIDTH_RATIO;
+        const maxWidth = applyWidthFitLimit(
+          ringSize * TIMER_FIT.RING_CONTENT_WIDTH_RATIO,
+          hasOvertime,
+        );
         const maxHeight = ringSize * TIMER_FIT.ringContentHeightRatio(hasCaption) - labelsHeight;
         const targetPx = ringSize * 0.24 * (scalePercent / 100);
         fitTextToBounds({
@@ -85,7 +89,10 @@ export function useTimerDisplayFit({
         return;
       }
 
-      const maxWidth = viewportRect.width * TIMER_FIT.DIGITAL_WIDTH_RATIO;
+      const maxWidth = applyWidthFitLimit(
+        viewportRect.width * TIMER_FIT.DIGITAL_WIDTH_RATIO,
+        hasOvertime,
+      );
       const maxHeight = viewportRect.height * TIMER_FIT.DIGITAL_HEIGHT_RATIO - labelsHeight;
       const sampleLength = sampleText.length;
       const targetPx = Math.min(

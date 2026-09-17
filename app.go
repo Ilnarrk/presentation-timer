@@ -453,8 +453,9 @@ func (a *App) Pause() {
 	}
 }
 
-func (a *App) SetTalkDurationOverride(minutes int) error {
-	if minutes < 1 || minutes > 180 {
+func (a *App) SetTalkDurationOverride(minutes int, seconds int) error {
+	total := minutes*60 + seconds
+	if minutes < 0 || seconds < 0 || seconds > 59 || total < 1 || minutes > 180 || total > 180*60 {
 		return timer.ErrInvalidDuration
 	}
 	a.mu.Lock()
@@ -462,7 +463,7 @@ func (a *App) SetTalkDurationOverride(minutes int) error {
 	if a.engine == nil {
 		return timer.ErrInvalidDuration
 	}
-	return a.engine.SetTalkDuration(time.Duration(minutes) * time.Minute)
+	return a.engine.SetTalkDuration(time.Duration(total) * time.Second)
 }
 
 func (a *App) Reset() {

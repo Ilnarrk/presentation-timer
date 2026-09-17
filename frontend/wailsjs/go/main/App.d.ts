@@ -72,7 +72,7 @@ export function SetConferenceBrowserVisible(arg1:boolean):Promise<conference.Sta
 
 export function SetConferenceCameraEnabled(arg1:boolean):Promise<conference.State>;
 
-export function SetTalkDurationOverride(arg1:number):Promise<void>;
+export function SetTalkDurationOverride(arg1:number,arg2:number):Promise<void>;
 
 export function SetWidgetQuickTimeOpen(arg1:boolean):Promise<void>;
 

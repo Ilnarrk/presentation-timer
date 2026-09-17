@@ -52,6 +52,7 @@ type Settings struct {
 	WidgetColorRunning         string   `json:"widgetColorRunning"`
 	WidgetColorPaused          string   `json:"widgetColorPaused"`
 	WidgetColorOvertime        string   `json:"widgetColorOvertime"`
+	WidgetQuickPresets         []DurationPreset `json:"widgetQuickPresets"`
 	MainWindowX                int      `json:"mainWindowX"`
 	MainWindowY                int      `json:"mainWindowY"`
 	MainWindowWidth            int      `json:"mainWindowWidth"`
@@ -83,7 +84,14 @@ const (
 	MaxWidgetBackgroundTransparency = 100
 	DefaultWidgetBackgroundTransparency = 0
 	LegacyTransparentBackgroundTransparency = 82
+	WidgetQuickPresetCount = 4
+	MaxTalkDurationMinutes = 180
 )
+
+type DurationPreset struct {
+	Minutes int `json:"minutes"`
+	Seconds int `json:"seconds"`
+}
 
 var timerFontIDPattern = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 
@@ -118,13 +126,23 @@ func Default() Settings {
 		TimerScalePercent:          DefaultTimerScalePercent,
 		TimerDisplayMode:           TimerDisplayModeRing,
 		TimerFont:                  TimerFontSystem,
-		WidgetPlacement:            WidgetPlacementTopRight,
+		WidgetPlacement:            WidgetPlacementFree,
 		AppTheme:                   AppThemeDark,
 		WidgetTheme:                WidgetThemeDark,
 		WidgetShape:                WidgetShapeRounded,
 		WidgetBackgroundTransparency: DefaultWidgetBackgroundTransparency,
 		WidgetFreeX:                0,
 		WidgetFreeY:                0,
+		WidgetQuickPresets:         DefaultWidgetQuickPresets(),
+	}
+}
+
+func DefaultWidgetQuickPresets() []DurationPreset {
+	return []DurationPreset{
+		{Minutes: 5, Seconds: 0},
+		{Minutes: 10, Seconds: 0},
+		{Minutes: 15, Seconds: 0},
+		{Minutes: 20, Seconds: 0},
 	}
 }
 
@@ -305,7 +323,7 @@ func normalize(value, fallback Settings) Settings {
 		if value.WidgetPlacement == "" {
 			value.WidgetPlacement = fallback.WidgetPlacement
 			if value.WidgetPlacement == "" {
-				value.WidgetPlacement = WidgetPlacementTopRight
+				value.WidgetPlacement = WidgetPlacementFree
 			}
 		} else {
 			value.WidgetPlacement = WidgetPlacementTopRight
@@ -340,6 +358,7 @@ func normalize(value, fallback Settings) Settings {
 	default:
 		value.WidgetShape = WidgetShapeRounded
 	}
+	value.WidgetQuickPresets = normalizeWidgetQuickPresets(value.WidgetQuickPresets)
 	return value
 }
 
@@ -351,6 +370,41 @@ func normalizeTimerFont(font string) string {
 		return font
 	}
 	return TimerFontSystem
+}
+
+func normalizeWidgetQuickPresets(value []DurationPreset) []DurationPreset {
+	defaults := DefaultWidgetQuickPresets()
+	out := make([]DurationPreset, WidgetQuickPresetCount)
+	for i := 0; i < WidgetQuickPresetCount; i++ {
+		preset := defaults[i]
+		if i < len(value) {
+			preset = value[i]
+		}
+		out[i] = clampDurationPreset(preset)
+	}
+	return out
+}
+
+func clampDurationPreset(preset DurationPreset) DurationPreset {
+	if preset.Minutes < 0 {
+		preset.Minutes = 0
+	}
+	if preset.Minutes > MaxTalkDurationMinutes {
+		preset.Minutes = MaxTalkDurationMinutes
+	}
+	if preset.Seconds < 0 {
+		preset.Seconds = 0
+	}
+	if preset.Seconds > 59 {
+		preset.Seconds = 59
+	}
+	if preset.Minutes == MaxTalkDurationMinutes {
+		preset.Seconds = 0
+	}
+	if preset.Minutes == 0 && preset.Seconds == 0 {
+		preset.Seconds = 1
+	}
+	return preset
 }
 
 func normalizeWidgetColor(color string) string {

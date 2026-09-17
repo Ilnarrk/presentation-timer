@@ -198,6 +198,20 @@ export namespace session {
 
 export namespace settings {
 	
+	export class DurationPreset {
+	    minutes: number;
+	    seconds: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DurationPreset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.minutes = source["minutes"];
+	        this.seconds = source["seconds"];
+	    }
+	}
 	export class Settings {
 	    talkMinutes: number;
 	    talkSeconds: number;
@@ -240,6 +254,7 @@ export namespace settings {
 	    widgetColorRunning: string;
 	    widgetColorPaused: string;
 	    widgetColorOvertime: string;
+	    widgetQuickPresets: DurationPreset[];
 	    mainWindowX: number;
 	    mainWindowY: number;
 	    mainWindowWidth: number;
@@ -292,11 +307,30 @@ export namespace settings {
 	        this.widgetColorRunning = source["widgetColorRunning"];
 	        this.widgetColorPaused = source["widgetColorPaused"];
 	        this.widgetColorOvertime = source["widgetColorOvertime"];
+	        this.widgetQuickPresets = this.convertValues(source["widgetQuickPresets"], DurationPreset);
 	        this.mainWindowX = source["mainWindowX"];
 	        this.mainWindowY = source["mainWindowY"];
 	        this.mainWindowWidth = source["mainWindowWidth"];
 	        this.mainWindowHeight = source["mainWindowHeight"];
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

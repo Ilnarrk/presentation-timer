@@ -130,8 +130,8 @@ export function SetConferenceCameraEnabled(arg1) {
   return window['go']['main']['App']['SetConferenceCameraEnabled'](arg1);
 }
 
-export function SetTalkDurationOverride(arg1) {
-  return window['go']['main']['App']['SetTalkDurationOverride'](arg1);
+export function SetTalkDurationOverride(arg1, arg2) {
+  return window['go']['main']['App']['SetTalkDurationOverride'](arg1, arg2);
 }
 
 export function SetWidgetQuickTimeOpen(arg1) {
