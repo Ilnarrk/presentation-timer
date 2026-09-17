@@ -1,91 +1,47 @@
+"""Build Windows .ico files from build/appicon.png."""
+
 from __future__ import annotations
 
+import shutil
+import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image
+
+ICO_SIZES = (256, 128, 64, 48, 32, 24, 16)
 
 
-def draw_icon(size: int) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+def png_to_ico(src: Path, dst: Path) -> None:
+    img = Image.open(src).convert("RGBA")
+    width, height = img.size
+    if width < 256 or height < 256:
+        print(
+            f"Warning: {src.name} is {width}x{height}; use at least 256x256 for sharp icons.",
+            file=sys.stderr,
+        )
 
-    margin = size * 0.08
-    box = (margin, margin, size - margin, size - margin)
-    radius = size * 0.18
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    img.save(dst, format="ICO", sizes=[(size, size) for size in ICO_SIZES])
 
-    draw.rounded_rectangle(box, radius=radius, fill=(15, 22, 36, 255))
-    draw.rounded_rectangle(box, radius=radius, outline=(79, 124, 255, 255), width=max(2, size // 64))
-
-    center = size / 2
-    outer_radius = size * 0.28
-    inner_radius = size * 0.22
-
-    draw.ellipse(
-        (
-            center - outer_radius,
-            center - outer_radius,
-            center + outer_radius,
-            center + outer_radius,
-        ),
-        outline=(103, 212, 255, 255),
-        width=max(3, size // 48),
-    )
-
-    for angle in range(0, 360, 30):
-        import math
-
-        rad = math.radians(angle - 90)
-        x1 = center + math.cos(rad) * inner_radius
-        y1 = center + math.sin(rad) * inner_radius
-        x2 = center + math.cos(rad) * outer_radius
-        y2 = center + math.sin(rad) * outer_radius
-        draw.line((x1, y1, x2, y2), fill=(120, 150, 200, 180), width=max(1, size // 128))
-
-    hour_len = outer_radius * 0.45
-    minute_len = outer_radius * 0.72
-    draw.line(
-        (center, center, center, center - hour_len),
-        fill=(232, 237, 247, 255),
-        width=max(3, size // 56),
-    )
-    draw.line(
-        (center, center, center + minute_len * 0.55, center - minute_len * 0.85),
-        fill=(56, 189, 148, 255),
-        width=max(3, size // 64),
-    )
-    draw.ellipse(
-        (
-            center - size * 0.035,
-            center - size * 0.035,
-            center + size * 0.035,
-            center + size * 0.035,
-        ),
-        fill=(232, 237, 247, 255),
-    )
-
-    return img
+    ico = Image.open(dst)
+    embedded = sorted(ico.info.get("sizes", []))
+    print(f"Wrote {dst} ({ico.size[0]}x{ico.size[1]}, embedded: {embedded})")
 
 
 def main() -> None:
     root = Path(__file__).resolve().parent
     appicon = root / "appicon.png"
     icon_ico = root / "windows" / "icon.ico"
+    embedded_ico = root.parent / "internal" / "conference" / "icon.ico"
 
-    base = draw_icon(1024)
-    base.save(appicon, format="PNG")
+    if not appicon.is_file():
+        print(f"Missing source icon: {appicon}", file=sys.stderr)
+        sys.exit(1)
 
-    sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    icons = [draw_icon(size) for size, _ in sizes]
-    # Pillow ignores ICO sizes larger than the primary image, so save 256x256 first.
-    icons[-1].save(
-        icon_ico,
-        format="ICO",
-        sizes=sizes,
-        append_images=icons[:-1],
-    )
-
-    print(f"Wrote {appicon}")
-    print(f"Wrote {icon_ico}")
+    png_to_ico(appicon, icon_ico)
+    embedded_ico.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(icon_ico, embedded_ico)
+    print(f"Copied to {embedded_ico}")
 
 
 if __name__ == "__main__":

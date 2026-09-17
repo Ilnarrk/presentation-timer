@@ -1,5 +1,5 @@
 import { type RefObject, useLayoutEffect, useRef } from 'react';
-import { TIMER_FIT, fitTextToBounds, getWidgetWorstCaseTimeText } from './timerFit';
+import { TIMER_FIT, fitTextToBounds, getWidgetWorstCaseTimeText, measureSiblingHeight } from './timerFit';
 
 type UseWidgetTimerFitOptions = {
   fontId: string;
@@ -43,8 +43,9 @@ export function useWidgetTimerFit({
       const style = getComputedStyle(body);
       const paddingX = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
       const paddingY = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+      const reservedHeight = measureSiblingHeight(body, timer);
       const maxWidth = Math.max(TIMER_FIT.MIN_FONT_PX, bodyRect.width - paddingX);
-      const maxHeight = Math.max(TIMER_FIT.MIN_FONT_PX, bodyRect.height - paddingY);
+      const maxHeight = Math.max(TIMER_FIT.MIN_FONT_PX, bodyRect.height - paddingY - reservedHeight);
       const targetPx = Math.min(maxHeight * 0.88, maxWidth / Math.max(sampleText.length * 0.52, 4));
 
       fitTextToBounds({

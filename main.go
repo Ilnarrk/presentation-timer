@@ -41,10 +41,10 @@ func main() {
 	err = wails.Run(&options.App{
 		Title:       windowTitle,
 		AlwaysOnTop: true,
-		Width:       960,
-		Height:      720,
-		MinWidth:  800,
-		MinHeight: 600,
+		Width:       normalWindowDefaultWidth,
+		Height:      normalWindowDefaultHeight,
+		MinWidth:    normalWindowMinWidth,
+		MinHeight:   normalWindowMinHeight,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

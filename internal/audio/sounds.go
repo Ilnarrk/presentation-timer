@@ -105,6 +105,41 @@ func (c *Catalog) Defaults() Defaults {
 	return c.defaults
 }
 
+func (c *Catalog) Contains(soundID string) bool {
+	if soundID == "" {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.sounds[soundID]
+	return ok
+}
+
+// ResolveSoundID returns soundID when it exists, otherwise the first available
+// fallback that exists, or an empty string.
+func (c *Catalog) ResolveSoundID(soundID string, fallbacks ...string) string {
+	if c.Contains(soundID) {
+		return soundID
+	}
+	for _, fallback := range fallbacks {
+		if c.Contains(fallback) {
+			return fallback
+		}
+	}
+	for _, sound := range c.ListSounds() {
+		return sound.ID
+	}
+	return ""
+}
+
+// ResolveOptionalSoundID keeps valid optional cue IDs and clears unknown ones.
+func (c *Catalog) ResolveOptionalSoundID(soundID string) string {
+	if c.Contains(soundID) {
+		return soundID
+	}
+	return ""
+}
+
 func (c *Catalog) Render(soundID string, volume float64) ([]byte, error) {
 	c.mu.RLock()
 	sound, ok := c.sounds[soundID]
@@ -293,6 +328,7 @@ type Player struct {
 	deviceID     string
 	volume       float64
 	playbackFn   func(context.Context, string, []byte) error
+	warmupFn     func(string) error
 }
 
 func NewPlayer(catalogs ...*Catalog) *Player {
@@ -303,12 +339,23 @@ func NewPlayer(catalogs ...*Catalog) *Player {
 	if catalog == nil {
 		catalog = NewMemoryCatalog(nil)
 	}
-	return &Player{
-		catalog:    catalog,
-		deviceID:   "default",
-		volume:     0.85,
-		playbackFn: playWAV,
+	player := &Player{
+		catalog:  catalog,
+		deviceID: "default",
+		volume:   0.85,
 	}
+	attachPlatformPlayback(player)
+	return player
+}
+
+func (p *Player) Warmup() error {
+	if p.warmupFn == nil {
+		return nil
+	}
+	p.mu.RLock()
+	deviceID := p.deviceID
+	p.mu.RUnlock()
+	return p.warmupFn(deviceID)
 }
 
 func (p *Player) SetDevice(deviceID string) {
@@ -362,8 +409,11 @@ func (p *Player) Play(soundID string) error {
 }
 
 func applyWAVVolume(wav []byte, volume float64) []byte {
-	out := append([]byte(nil), wav...)
 	volume = clampVolume(volume)
+	if volume == 1 {
+		return wav
+	}
+	out := append([]byte(nil), wav...)
 	for i := 44; i+1 < len(out); i += 2 {
 		sample := int16(binary.LittleEndian.Uint16(out[i : i+2]))
 		scaled := int(math.Round(float64(sample) * volume))

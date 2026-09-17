@@ -293,6 +293,30 @@ function SettingsLockBanner({ message }: { message: string }) {
   return <div className="settings-lock-banner" role="status">{message}</div>;
 }
 
+function formatAppError(err: unknown): string {
+  const raw = String(err).replace(/^Error:\s*/i, '');
+  switch (raw) {
+    case 'duration must be greater than zero':
+      return 'Длительность должна быть больше нуля';
+    case 'invalid phase transition':
+      return 'Недопустимое действие для текущей фазы';
+    default:
+      return raw;
+  }
+}
+
+function PanelError({ message }: { message: string }) {
+  return <div className="panel-error" role="alert">{message}</div>;
+}
+
+function useTimedMessage(message: string, clear: () => void, delayMs = 5000) {
+  useEffect(() => {
+    if (!message) return undefined;
+    const timeout = window.setTimeout(clear, delayMs);
+    return () => window.clearTimeout(timeout);
+  }, [message, clear, delayMs]);
+}
+
 function templateEntryDescription(entry: templates.Entry): string {
   const tmpl = session.Template.createFrom(entry.template);
   const budget = sessionBudgetSeconds(tmpl.totalMinutes || 0, tmpl.totalSeconds || 0);
@@ -333,7 +357,10 @@ function App() {
   const [conferenceName, setConferenceName] = useState('Таймер');
   const [conferenceState, setConferenceState] = useState<ConferenceState>(initialConferenceState);
   const [conferenceBusy, setConferenceBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+  const [sessionError, setSessionError] = useState('');
+  const [conferenceError, setConferenceError] = useState('');
+  const [widgetDurationError, setWidgetDurationError] = useState('');
   const [saving, setSaving] = useState(false);
   const [importingSound, setImportingSound] = useState(false);
   const [previewingSoundId, setPreviewingSoundId] = useState('');
@@ -488,9 +515,13 @@ function App() {
       });
       setVolume(saved.volume);
       setDeviceId(saved.deviceId);
-      setError('');
+      setSettingsError('');
     } catch (err) {
-      setError(String(err));
+      const message = formatAppError(err);
+      setSettingsError(message);
+      if (message.includes('Длительность')) {
+        setSettingsTab('timer');
+      }
     } finally {
       setSaving(false);
     }
@@ -550,10 +581,15 @@ function App() {
       setQuestionsSecondsPart(initialSettings.questionsSeconds);
       setReminderMinutes(initialSettings.reminderMinutes);
       setReminderSecondsPart(initialSettings.reminderSeconds);
-      setSoundId(initialSettings.soundId);
-      setReminderSoundId(initialSettings.reminderSoundId ?? '');
-      setQuestionsSoundId(initialSettings.questionsSoundId);
-      setNextSoundId(initialSettings.nextSoundId);
+      const availableSounds = initialSounds as SoundOption[];
+      const soundIds = new Set(availableSounds.map((sound) => sound.id));
+      const resolvedSoundId = initialSettings.soundId && soundIds.has(initialSettings.soundId)
+        ? initialSettings.soundId
+        : (availableSounds.find((sound) => sound.id.endsWith('alert.mp3') || sound.label === 'alert')?.id ?? availableSounds[0]?.id ?? '');
+      setSoundId(resolvedSoundId);
+      setReminderSoundId(initialSettings.reminderSoundId && soundIds.has(initialSettings.reminderSoundId) ? initialSettings.reminderSoundId : '');
+      setQuestionsSoundId(initialSettings.questionsSoundId && soundIds.has(initialSettings.questionsSoundId) ? initialSettings.questionsSoundId : '');
+      setNextSoundId(initialSettings.nextSoundId && soundIds.has(initialSettings.nextSoundId) ? initialSettings.nextSoundId : '');
       setDeviceId(initialSettings.deviceId);
       setVolume(initialSettings.volume);
       setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
@@ -596,7 +632,7 @@ function App() {
       }
     };
 
-    bootstrap().catch((err) => setError(String(err)));
+    bootstrap().catch((err) => setSettingsError(formatAppError(err)));
   }, []);
 
   useEffect(() => {
@@ -659,7 +695,6 @@ function App() {
     const unsubscribe = EventsOn('conference:state', (state: ConferenceState) => {
       setConferenceState(state);
       setConferenceCameraEnabled(state.cameraEnabled ?? false);
-      if (state.phase === 'error') setError(state.message);
     });
     return () => unsubscribe();
   }, []);
@@ -680,16 +715,33 @@ function App() {
 
   useEffect(() => {
     const unsubscribeError = EventsOn('audio:error', (message: string) => {
-      setError(String(message));
+      setSettingsError(formatAppError(message));
+      setSettingsTab('sound');
+      setSettingsOpen(true);
     });
-    const unsubscribeMuted = EventsOn('audio:muted', (message: string) => {
-      setError(String(message));
-    });
-    return () => {
-      unsubscribeError();
-      unsubscribeMuted();
-    };
+    return () => unsubscribeError();
   }, []);
+
+  const clearSettingsError = useCallback(() => setSettingsError(''), []);
+  const clearSessionError = useCallback(() => setSessionError(''), []);
+  const clearConferenceError = useCallback(() => setConferenceError(''), []);
+  const clearWidgetDurationError = useCallback(() => setWidgetDurationError(''), []);
+  useTimedMessage(settingsError, clearSettingsError);
+  useTimedMessage(sessionError, clearSessionError);
+  useTimedMessage(conferenceError, clearConferenceError);
+  useTimedMessage(widgetDurationError, clearWidgetDurationError);
+
+  useEffect(() => {
+    if (!settingsOpen) setSettingsError('');
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    if (!sessionPanelOpen && !templateModalOpen) setSessionError('');
+  }, [sessionPanelOpen, templateModalOpen]);
+
+  useEffect(() => {
+    if (!connectionPromptOpen) setConferenceError('');
+  }, [connectionPromptOpen]);
 
   useEffect(() => {
     if (!successMessage) return undefined;
@@ -720,6 +772,7 @@ function App() {
     setWidgetDurationOpen(false);
     setWidgetDurationCustomOpen(false);
     setWidgetDurationInvalid(false);
+    setWidgetDurationError('');
     void SetWidgetQuickTimeOpen(false);
   }, []);
 
@@ -728,24 +781,21 @@ function App() {
     try {
       await persistSettings();
       await Start();
-      setError('');
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      // Ошибки настроек показываются в панели настроек.
     }
   };
 
   const handleReset = () => {
     Reset();
-    setError('');
   };
 
   const handleGoToQuestions = async () => {
     closeWidgetDuration();
     try {
       await GoToQuestions();
-      setError('');
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      // Недопустимые действия таймера не показываем на главном экране.
     }
   };
 
@@ -753,9 +803,8 @@ function App() {
     closeWidgetDuration();
     try {
       await NextSpeaker();
-      setError('');
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      // Недопустимые действия таймера не показываем на главном экране.
     }
   };
 
@@ -763,12 +812,12 @@ function App() {
     setWidgetDurationDraft(String(widgetDurationMinutes));
     setWidgetDurationCustomOpen(false);
     setWidgetDurationInvalid(false);
+    setWidgetDurationError('');
     try {
       await SetWidgetQuickTimeOpen(true);
       setWidgetDurationOpen(true);
-      setError('');
     } catch (err) {
-      setError(String(err));
+      setWidgetDurationError(formatAppError(err));
     }
   };
   const toggleWidgetDuration = async () => {
@@ -799,9 +848,9 @@ function App() {
       setWidgetDurationInvalid(false);
       await persistSettings({ talkMinutes: parsed, talkSeconds: 0 });
       if (!keepOpen) closeWidgetDuration();
-      setError('');
+      setWidgetDurationError('');
     } catch (err) {
-      setError(String(err));
+      setWidgetDurationError(formatAppError(err));
     }
   };
   const askConfirm = useCallback((title: string, message: string) => new Promise<boolean>((resolve) => {
@@ -825,9 +874,9 @@ function App() {
       const next = await CreateSession(sessionTemplate());
       setSessionState(next as SessionState);
       setSessionPanelOpen(true);
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -842,9 +891,9 @@ function App() {
     try {
       const next = await ResetSession();
       setSessionState(next as SessionState);
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -859,9 +908,9 @@ function App() {
     try {
       const next = await EndSession();
       setSessionState(next as SessionState);
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -885,7 +934,7 @@ function App() {
     const next = await CreateSession(tmpl);
     setSessionState(next as SessionState);
     setSessionPanelOpen(true);
-    setError('');
+    setSessionError('');
     return true;
   };
 
@@ -894,9 +943,9 @@ function App() {
     try {
       const entry = templates.Entry.createFrom(await SaveSessionTemplate(sessionTemplate()));
       setSuccessMessage(`Шаблон «${entry.name}» сохранён`);
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -910,9 +959,9 @@ function App() {
       setTemplateEntries(entries);
       setSelectedTemplateId(entries[0]?.id ?? '');
       setTemplateModalOpen(true);
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -929,7 +978,7 @@ function App() {
         setTemplateModalOpen(false);
       }
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -946,9 +995,9 @@ function App() {
       const entries = (await ListSessionTemplates()).map((item) => templates.Entry.createFrom(item));
       setTemplateEntries(entries);
       setSelectedTemplateId(entries.find((item) => item.id === selectedTemplateId)?.id ?? entries[0]?.id ?? '');
-      setError('');
+      setSessionError('');
     } catch (err) {
-      setError(String(err));
+      setSessionError(formatAppError(err));
     } finally {
       setSessionBusy(false);
     }
@@ -974,9 +1023,10 @@ function App() {
     setPreviewingSoundId(previewSoundId);
     try {
       await PreviewSound(previewSoundId);
-      setError('');
+      setSettingsError('');
     } catch (err) {
-      setError(String(err));
+      setSettingsError(formatAppError(err));
+      setSettingsTab('sound');
     } finally {
       previewingRef.current = false;
       setPreviewingSoundId('');
@@ -993,9 +1043,10 @@ function App() {
         setSoundId(imported.id);
         await persistSettings({ soundId: imported.id });
       }
-      setError('');
+      setSettingsError('');
     } catch (err) {
-      setError(String(err));
+      setSettingsError(formatAppError(err));
+      setSettingsTab('sound');
     } finally {
       setImportingSound(false);
     }
@@ -1003,7 +1054,7 @@ function App() {
 
   const handleConferenceConnect = async () => {
     if (!conferenceUrl.trim()) {
-      setError('Укажите HTTPS-ссылку на встречу');
+      setConferenceError('Укажите HTTPS-ссылку на встречу');
       return;
     }
     setConferenceBusy(true);
@@ -1011,9 +1062,9 @@ function App() {
       const state = await ConnectConference(conferenceUrl.trim(), conferenceName.trim());
       setConferenceState(state as ConferenceState);
       setConnectionPromptOpen(true);
-      setError('');
+      setConferenceError('');
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1025,9 +1076,9 @@ function App() {
       await DisconnectConference();
       const state = await GetConferenceState();
       setConferenceState(state as ConferenceState);
-      setError('');
+      setConferenceError('');
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1039,11 +1090,13 @@ function App() {
       await ConfirmConferenceJoined();
       const state = await GetConferenceState();
       setConferenceState(state as ConferenceState);
-      setError('');
+      setConferenceError('');
     } catch (err) {
       const state = await GetConferenceState();
       setConferenceState(state as ConferenceState);
-      setError(state.phase === 'error' && state.message ? state.message : String(err));
+      if (!(state.phase === 'error' && state.message)) {
+        setConferenceError(formatAppError(err));
+      }
     } finally {
       setConferenceBusy(false);
     }
@@ -1054,9 +1107,9 @@ function App() {
     try {
       await persistSettings();
       await TestConferenceSound(soundId);
-      setError('');
+      setConferenceError('');
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1067,9 +1120,9 @@ function App() {
     try {
       const state = await SetConferenceBrowserVisible(!conferenceState.browserVisible);
       setConferenceState(state as ConferenceState);
-      setError('');
+      setConferenceError('');
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1081,9 +1134,9 @@ function App() {
       const state = await SetConferenceCameraEnabled(enabled);
       setConferenceState(state as ConferenceState);
       setConferenceCameraEnabled(state.cameraEnabled ?? enabled);
-      setError('');
+      setConferenceError('');
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1098,9 +1151,8 @@ function App() {
       setTemplateModalOpen(false);
       await EnterWidgetMode();
       setWidgetMode(true);
-      setError('');
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      // Ошибки режима виджета не показываем на главном экране.
     }
   };
 
@@ -1108,9 +1160,8 @@ function App() {
     try {
       await ExitWidgetMode();
       setWidgetMode(false);
-      setError('');
-    } catch (err) {
-      setError(String(err));
+    } catch {
+      // Ошибки режима виджета не показываем на главном экране.
     }
   };
 
@@ -1119,13 +1170,13 @@ function App() {
     try {
       const snapshot = await GetConferenceDiagnostics();
       await ClipboardSetText(snapshot);
-      setError('');
+      setConferenceError('');
       setConferenceState({
         ...conferenceState,
         message: 'Диагностика скопирована в буфер обмена',
       });
     } catch (err) {
-      setError(String(err));
+      setConferenceError(formatAppError(err));
     } finally {
       setConferenceBusy(false);
     }
@@ -1311,6 +1362,7 @@ function App() {
                 <span className="quick-time-title">{icon('clock')} Следующий докладчик</span>
                 <span className="quick-time-hints">Enter — применить&nbsp;&nbsp; Esc — закрыть</span>
               </header>
+              {widgetDurationError && <p className="quick-time-panel-error" role="alert">{widgetDurationError}</p>}
               <div className="quick-time-presets" role="group" aria-label="Быстрый выбор времени">
                 {[5, 10, 15, 20].map((minutes) => (
                   <button
@@ -1453,7 +1505,6 @@ function App() {
           </button>
         </nav>
 
-        {error && <div className="error-toast">{error}</div>}
         {successMessage && <div className="success-toast">{successMessage}</div>}
       </main>
 
@@ -1473,6 +1524,8 @@ function App() {
                 {icon('close')}
               </button>
             </div>
+
+            {sessionError && <PanelError message={sessionError} />}
 
             {!sessionState.active ? (
               <>
@@ -1665,6 +1718,7 @@ function App() {
             <span className="modal-kicker">ВКС</span>
             <h2 id="connection-title">Подключение к ВКС</h2>
             <p className="modal-copy">{conferenceState.message}</p>
+            {conferenceError && <PanelError message={conferenceError} />}
             {!conferenceActive && connectionForm}
             <label className="settings-checkbox conference-camera-toggle">
               <input
@@ -1759,6 +1813,8 @@ function App() {
                 >{label}</button>
               ))}
             </div>
+
+            {settingsError && <PanelError message={settingsError} />}
 
             {settingsLocked && settingsTab !== 'interface' && <SettingsLockBanner message={settingsLockMessage} />}
 
@@ -2111,6 +2167,7 @@ function App() {
               {icon('close')}
             </button>
             <h2 id="template-title">Загрузить шаблон</h2>
+            {sessionError && <PanelError message={sessionError} />}
             {settingsLocked ? (
               <SettingsLockBanner message={settingsLockMessage} />
             ) : templateEntries.length === 0 ? (

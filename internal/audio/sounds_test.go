@@ -13,6 +13,24 @@ import (
 	"time"
 )
 
+func TestResolveSoundIDMigratesUnknownIDs(t *testing.T) {
+	wav := synthesizeTone(440, 20*time.Millisecond, 1)
+	catalog := NewMemoryCatalog(fstest.MapFS{
+		"sounds/alert.wav": {Data: wav},
+		"sounds/other.wav": {Data: wav},
+	})
+
+	if got := catalog.ResolveSoundID("chime", catalog.Defaults().AlertID); got != "embedded:alert.wav" {
+		t.Fatalf("expected alert fallback, got %q", got)
+	}
+	if got := catalog.ResolveOptionalSoundID("chime"); got != "" {
+		t.Fatalf("expected empty optional sound, got %q", got)
+	}
+	if got := catalog.ResolveOptionalSoundID("embedded:other.wav"); got != "embedded:other.wav" {
+		t.Fatalf("expected optional sound to stay, got %q", got)
+	}
+}
+
 func TestProjectSoundsAndDefaults(t *testing.T) {
 	wav := synthesizeTone(440, 20*time.Millisecond, 1)
 	project := fstest.MapFS{

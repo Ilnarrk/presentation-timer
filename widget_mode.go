@@ -10,6 +10,9 @@ import (
 const (
 	normalWindowMinWidth  = 800
 	normalWindowMinHeight = 600
+	// Default main window: min width, roughly square with a bit of extra height.
+	normalWindowDefaultWidth  = normalWindowMinWidth
+	normalWindowDefaultHeight = normalWindowMinWidth + 80
 )
 
 type windowBounds struct {
@@ -193,6 +196,7 @@ func (a *App) restoreMainWindowBounds() {
 	}
 	s := a.settings.Get()
 	if s.MainWindowWidth <= 0 || s.MainWindowHeight <= 0 {
+		runtime.WindowSetSize(a.ctx, normalWindowDefaultWidth, normalWindowDefaultHeight)
 		return
 	}
 	work := windowmode.WorkAreaForBounds(s.MainWindowX, s.MainWindowY, s.MainWindowWidth, s.MainWindowHeight)

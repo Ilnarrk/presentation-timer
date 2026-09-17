@@ -684,6 +684,24 @@ button {
   line-height: 1.45;
 }
 
+.panel-error {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 101, 118, 0.25);
+  border-radius: 12px;
+  background: rgba(38, 18, 24, 0.92);
+  color: #ff9da7;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.settings-drawer .panel-error,
+.session-drawer .panel-error,
+.connection-modal .panel-error,
+.template-modal .panel-error {
+  margin: 0 16px 16px;
+}
+
 .modal-backdrop {
   position: fixed;
   z-index: 20;
@@ -1751,9 +1769,6 @@ input[type="range"] {
 }
 
 .widget-body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -2260,11 +2275,14 @@ body {
 }
 
 .widget-body {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
   container-type: inline-size;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   padding-right: calc(var(--widget-restore-size) * 0.45);
-  place-items: center;
   text-align: center;
 }
 
@@ -2280,7 +2298,8 @@ body {
 .widget-duration-control {
   position: relative;
   z-index: 2;
-  margin-top: clamp(4px, 1.5cqh, 8px);
+  flex: 0 0 auto;
+  margin-top: clamp(2px, 0.8cqh, 5px);
 }
 
 .widget-duration-trigger {
@@ -2288,7 +2307,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: clamp(44px, 14cqw, 56px);
+  min-width: clamp(52px, 16cqw, 68px);
   min-height: clamp(24px, 5cqh, 32px);
   padding: 8px 12px;
   border: 0;
@@ -2306,7 +2325,7 @@ body {
 
 .widget-duration-mark {
   display: block;
-  width: clamp(18px, 7cqw, 26px);
+  width: clamp(26px, 10cqw, 38px);
   height: 3px;
   border-radius: 2px;
   background: var(--widget-state);
@@ -2508,6 +2527,13 @@ body {
   font-size: 0.65rem;
 }
 
+.quick-time-panel-error {
+  margin: 0 0 10px;
+  color: #ff8794;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
 .widget-duration-trigger:focus-visible,
 .quick-time-preset:focus-visible,
 .quick-time-custom input:focus-visible,
@@ -2553,8 +2579,13 @@ body {
 .widget-mode.status-alert .widget-timer {
   color: var(--widget-state);
   font-size: var(--widget-timer-fit-size, var(--widget-timer-size));
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   max-width: 100%;
+  min-height: 0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -2747,12 +2778,11 @@ body {
   --widget-border-color: transparent;
   --widget-text: #f8fbff;
   --widget-muted: #f8fbff;
-  --widget-restore-color: #08784d;
-  --widget-transparent-accent: #08784d;
-  --widget-panel-bg: rgb(255 255 255 / 0.97);
-  --widget-panel-text: #101827;
-  --widget-panel-muted: #42536d;
-  --widget-panel-border: rgba(16, 24, 39, 0.14);
+  --widget-restore-color: var(--widget-state);
+  --widget-panel-bg: transparent;
+  --widget-panel-text: var(--widget-text);
+  --widget-panel-muted: rgba(248, 251, 255, 0.78);
+  --widget-panel-border: color-mix(in srgb, var(--widget-state) 42%, rgba(255, 255, 255, 0.18));
 }
 
 .app-shell.widget-mode.widget-theme-transparent.status-idle,
@@ -2780,6 +2810,29 @@ body {
 .widget-theme-transparent .quick-time-panel {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.widget-theme-transparent .quick-time-title,
+.widget-theme-transparent .quick-time-hints,
+.widget-theme-transparent .quick-time-preset,
+.widget-theme-transparent .quick-time-preset span,
+.widget-theme-transparent .quick-time-custom-trigger {
+  -webkit-text-stroke: 0.014em rgba(0, 0, 0, 0.34);
+  paint-order: stroke fill;
+  text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.widget-theme-transparent .quick-time-preset {
+  border-color: color-mix(in srgb, var(--widget-panel-text) 28%, transparent);
+  background: color-mix(in srgb, var(--widget-panel-text) 10%, transparent);
+}
+
+.widget-theme-transparent .quick-time-preset:hover,
+.widget-theme-transparent .quick-time-preset.is-selected {
+  border-color: color-mix(in srgb, var(--widget-state) 78%, transparent);
+  background: color-mix(in srgb, var(--widget-state) 22%, transparent);
 }
 
 .widget-theme-transparent .widget-restore,
@@ -2787,14 +2840,14 @@ body {
   border: none;
   background: transparent;
   box-shadow: none;
-  color: var(--widget-transparent-accent);
+  color: var(--widget-restore-color);
   opacity: 1;
 }
 
 .widget-theme-transparent .icon-button.quiet.widget-restore:hover:not(:disabled) {
   border: none;
   background: transparent;
-  color: var(--widget-transparent-accent);
+  color: var(--widget-restore-color);
   opacity: 0.85;
   box-shadow: none;
 }
@@ -2904,7 +2957,7 @@ body:has(.widget-mode),
 .widget-theme-transparent .preview-restore {
   border: none;
   background: transparent;
-  color: var(--widget-transparent-accent);
+  color: var(--widget-restore-color);
 }
 
 .widget-option-group {

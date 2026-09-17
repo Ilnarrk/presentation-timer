@@ -115,7 +115,13 @@ func (a *App) startup(ctx context.Context) {
 
 	cfg := a.timerConfigFromSettings(store.Get())
 	a.engine = timer.NewEngine(cfg)
-	a.applyAudioSettings(store.Get())
+	a.reconcileAndPersistSoundSettings()
+	a.applyAudioSettings(a.settings.Get())
+	go func() {
+		if err := a.audio.Warmup(); err != nil {
+			runtime.LogErrorf(ctx, "audio warmup failed: %v", err)
+		}
+	}()
 
 	a.engine.SetCallbacks(
 		func(snapshot timer.Snapshot) {
@@ -159,7 +165,7 @@ func (a *App) GetSettings() settings.Settings {
 	if a.settings == nil {
 		return settings.Default()
 	}
-	return a.settings.Get()
+	return a.reconcileSoundSettings(a.settings.Get())
 }
 
 func (a *App) SaveSettings(input settings.Settings) error {
@@ -211,6 +217,10 @@ func (a *App) GetSounds() []audio.Sound {
 }
 
 func (a *App) PreviewSound(soundID string) error {
+	soundID = a.resolveSoundID(soundID)
+	if soundID == "" {
+		return fmt.Errorf("звук не выбран")
+	}
 	return a.audio.Preview(soundID)
 }
 
@@ -297,10 +307,7 @@ func (a *App) TestConferenceSound(soundID string) error {
 		soundID = s.SoundID
 	}
 	if shouldPlayLocalSound(s) {
-		if err := a.audio.Play(soundID); err != nil {
-			runtime.LogErrorf(a.ctx, "local conference test playback failed: %v", err)
-			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
-		}
+		a.playLocalSoundAsync(soundID, "local conference test playback")
 	}
 	wav, err := a.catalog.Render(soundID, s.Volume)
 	if err != nil {
@@ -564,6 +571,46 @@ func (a *App) applyAudioSettings(s settings.Settings) {
 	a.audio.SetVolume(s.Volume)
 }
 
+func (a *App) reconcileSoundSettings(s settings.Settings) settings.Settings {
+	if a.catalog == nil {
+		return s
+	}
+	defaults := a.catalog.Defaults()
+	s.SoundID = a.catalog.ResolveSoundID(s.SoundID, defaults.AlertID)
+	s.ReminderSoundID = a.catalog.ResolveOptionalSoundID(s.ReminderSoundID)
+	s.QuestionsSoundID = a.catalog.ResolveOptionalSoundID(s.QuestionsSoundID)
+	s.NextSoundID = a.catalog.ResolveOptionalSoundID(s.NextSoundID)
+	return s
+}
+
+func (a *App) resolveSoundID(soundID string) string {
+	if a.catalog == nil {
+		return soundID
+	}
+	return a.catalog.ResolveSoundID(soundID, a.catalog.Defaults().AlertID)
+}
+
+func (a *App) reconcileAndPersistSoundSettings() {
+	if a.settings == nil {
+		return
+	}
+	current := a.settings.Get()
+	reconciled := a.reconcileSoundSettings(current)
+	if soundSettingsEqual(current, reconciled) {
+		return
+	}
+	if err := a.settings.Save(reconciled); err != nil {
+		runtime.LogErrorf(a.ctx, "sound settings migration failed: %v", err)
+	}
+}
+
+func soundSettingsEqual(a, b settings.Settings) bool {
+	return a.SoundID == b.SoundID &&
+		a.ReminderSoundID == b.ReminderSoundID &&
+		a.QuestionsSoundID == b.QuestionsSoundID &&
+		a.NextSoundID == b.NextSoundID
+}
+
 func (a *App) applyConferenceReceiveSettings(s settings.Settings) {
 	if a.conference == nil {
 		return
@@ -649,7 +696,6 @@ func (a *App) handleAlert(event timer.AlertEvent) {
 	if event.Repeated && s.ReminderSoundID != "" {
 		soundID = s.ReminderSoundID
 	}
-	player := a.audio
 	conferenceController := a.conference
 	volume := s.Volume
 	conferenceConnected := conferenceController != nil && conferenceController.IsConnected()
@@ -660,12 +706,7 @@ func (a *App) handleAlert(event timer.AlertEvent) {
 		playLocal, s.MuteConferenceSound, conferenceConnected, soundID)
 
 	if playLocal {
-		if err := player.Play(soundID); err != nil {
-			runtime.LogErrorf(a.ctx, "local alert playback failed: %v", err)
-			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
-		}
-	} else if s.MuteConferenceSound {
-		runtime.EventsEmit(a.ctx, "audio:muted", "Локальный звук отключён в настройках")
+		a.playLocalSoundAsync(soundID, "local alert playback")
 	}
 
 	if playConference {
@@ -697,10 +738,7 @@ func (a *App) playConferenceCue(soundID string) {
 	playLocal, playConference := alertPlaybackTargets(s, conferenceConnected)
 
 	if playLocal {
-		if err := a.audio.Play(soundID); err != nil {
-			runtime.LogErrorf(a.ctx, "local cue playback failed: %v", err)
-			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
-		}
+		a.playLocalSoundAsync(soundID, "local cue playback")
 	}
 
 	if playConference {
@@ -715,6 +753,15 @@ func (a *App) playConferenceCue(soundID string) {
 			}
 		}()
 	}
+}
+
+func (a *App) playLocalSoundAsync(soundID string, context string) {
+	go func() {
+		if err := a.audio.Play(soundID); err != nil {
+			runtime.LogErrorf(a.ctx, "%s failed: %v", context, err)
+			runtime.EventsEmit(a.ctx, "audio:error", err.Error())
+		}
+	}()
 }
 
 // alertPlaybackTargets decides where an alert should play.

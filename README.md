@@ -285,8 +285,8 @@ build/appicon.png
 
 Если нужно обновить иконку:
 
-1. измените `build/generate_icon.py` или замените `build/appicon.png`;
-2. при ручной замене PNG пересоберите ICO:
+1. замените `build/appicon.png` (рекомендуется 1024×1024, PNG с прозрачностью);
+2. пересоберите ICO и скопируйте его в `internal/conference/icon.ico`:
 
 ```powershell
 python build/generate_icon.py
