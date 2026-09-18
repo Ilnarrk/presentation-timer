@@ -50,6 +50,7 @@ const (
 	idcArrow        = 32512
 	colorWindow     = 5
 	coInitApartment = 0x2
+	rpcEChangedMode = 0x80010106 // RPC_E_CHANGED_MODE: thread already has COM in another apartment
 	classExists     = 1410
 	iconResourceID  = 1
 
@@ -222,9 +223,24 @@ func startConferenceWebView(ctx context.Context, profileDir string) (*conference
 	}
 }
 
-func runConferenceWebView(ctx context.Context, session *conferenceSession, profileDir string, port int, ready chan<- error) error {
-	if hr, _, _ := procCoInitializeEx.Call(0, coInitApartment); hr != 0 && hr != 1 {
+func initializeConferenceCOM() error {
+	hr, _, _ := procCoInitializeEx.Call(0, coInitApartment)
+	return coInitializeResultError(hr)
+}
+
+func coInitializeResultError(hr uintptr) error {
+	switch hr {
+	case 0, 1, rpcEChangedMode:
+		// S_OK / S_FALSE, or a recycled Go thread that already initialized COM (often MTA from audio).
+		return nil
+	default:
 		return fmt.Errorf("CoInitializeEx: HRESULT 0x%X", hr)
+	}
+}
+
+func runConferenceWebView(ctx context.Context, session *conferenceSession, profileDir string, port int, ready chan<- error) error {
+	if err := initializeConferenceCOM(); err != nil {
+		return err
 	}
 	if err := registerConferenceClass(); err != nil {
 		return err
