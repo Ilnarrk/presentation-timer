@@ -195,10 +195,14 @@ func (s *Store) Get() Settings {
 	return s.settings
 }
 
+func (s *Store) PersistsToDisk() bool {
+	return s.path != ""
+}
+
 func (s *Store) Save(settings Settings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.settings = normalize(settings, Default())
+	s.settings = normalize(settings, s.settings)
 	return s.saveLocked()
 }
 
@@ -232,7 +236,12 @@ func (s *Store) load() error {
 		return err
 	}
 	if err := json.Unmarshal(data, &s.settings); err != nil {
-		return err
+		backupPath := s.path + ".bak"
+		_ = os.Remove(backupPath)
+		if renameErr := os.Rename(s.path, backupPath); renameErr != nil {
+			return err
+		}
+		return os.ErrNotExist
 	}
 	s.settings = normalize(s.settings, Default())
 	return nil
@@ -436,9 +445,32 @@ func isValidHexColor(color string) bool {
 }
 
 func (s *Store) saveLocked() error {
+	if s.path == "" {
+		return nil
+	}
 	data, err := json.MarshalIndent(s.settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	dir := filepath.Dir(s.path)
+	tmp, err := os.CreateTemp(dir, "settings-*.json")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	writeErr := func() error {
+		if _, err := tmp.Write(data); err != nil {
+			return err
+		}
+		return tmp.Close()
+	}()
+	if writeErr != nil {
+		_ = os.Remove(tmpPath)
+		return writeErr
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }

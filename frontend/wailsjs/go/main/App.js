@@ -70,6 +70,10 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function GetSettingsStorageError() {
+  return window['go']['main']['App']['GetSettingsStorageError']();
+}
+
 export function GetSounds() {
   return window['go']['main']['App']['GetSounds']();
 }

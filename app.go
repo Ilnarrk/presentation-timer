@@ -23,22 +23,23 @@ import (
 type App struct {
 	ctx context.Context
 
-	mu           sync.Mutex
-	settings     *settings.Store
-	templates    *templates.Store
-	catalog      *audio.Catalog
-	audio        *audio.Player
-	engine       *timer.Engine
-	session      *session.Tracker
-	conference   *conference.Controller
-	projectFS    fs.FS
-	windowTitle  string
+	mu                  sync.Mutex
+	settings            *settings.Store
+	settingsStorageErr  string
+	templates           *templates.Store
+	catalog             *audio.Catalog
+	audio               *audio.Player
+	engine              *timer.Engine
+	session             *session.Tracker
+	conference          *conference.Controller
+	projectFS           fs.FS
+	windowTitle         string
 	widgetMode          bool
 	widgetQuickTimeOpen bool
 	widgetCompactBounds windowBounds
 	normalBounds        windowBounds
-	normalMinW   int
-	normalMinH   int
+	normalMinW          int
+	normalMinH          int
 }
 
 func NewApp(projectSounds ...fs.FS) *App {
@@ -46,17 +47,14 @@ func NewApp(projectSounds ...fs.FS) *App {
 	if len(projectSounds) > 0 {
 		app.projectFS = projectSounds[0]
 	}
+	app.initStores()
 	return app
 }
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-	appInfo := buildinfo.Get()
-	a.windowTitle = fmt.Sprintf("%s v%s", appInfo.Name, appInfo.Version)
-
+func (a *App) initStores() {
 	catalog, err := audio.NewCatalog(a.projectFS)
 	if err != nil {
-		runtime.LogErrorf(ctx, "sound catalog init failed: %v", err)
+		a.settingsStorageErr = fmt.Sprintf("sound catalog init failed: %v", err)
 		catalog = audio.NewMemoryCatalog(a.projectFS)
 	}
 	a.catalog = catalog
@@ -70,20 +68,39 @@ func (a *App) startup(ctx context.Context) {
 
 	store, err := settings.NewStoreWithDefaults(defaults)
 	if err != nil {
-		runtime.LogErrorf(ctx, "settings init failed: %v", err)
+		if a.settingsStorageErr != "" {
+			a.settingsStorageErr += "; "
+		}
+		a.settingsStorageErr += fmt.Sprintf("settings init failed: %v", err)
 		store = settings.NewMemoryStoreWithDefaults(defaults)
 	}
 	a.settings = store
 
 	templateStore, err := templates.NewStore()
 	if err != nil {
-		runtime.LogErrorf(ctx, "session templates init failed: %v", err)
+		if a.settingsStorageErr != "" {
+			a.settingsStorageErr += "; "
+		}
+		a.settingsStorageErr += fmt.Sprintf("session templates init failed: %v", err)
 		templateStore = templates.NewMemoryStore()
 	}
 	if err := templateStore.MigrateFromSettings(sessionTemplateFromSettings(store.Get())); err != nil {
-		runtime.LogErrorf(ctx, "session templates migration failed: %v", err)
+		if a.settingsStorageErr != "" {
+			a.settingsStorageErr += "; "
+		}
+		a.settingsStorageErr += fmt.Sprintf("session templates migration failed: %v", err)
 	}
 	a.templates = templateStore
+}
+
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	appInfo := buildinfo.Get()
+	a.windowTitle = fmt.Sprintf("%s v%s", appInfo.Name, appInfo.Version)
+
+	if a.settingsStorageErr != "" {
+		runtime.LogErrorf(ctx, "%s", a.settingsStorageErr)
+	}
 
 	conference.SetMainWindowRaiseHandler(func() {
 		runtime.WindowSetAlwaysOnTop(a.ctx, true)
@@ -114,7 +131,7 @@ func (a *App) startup(ctx context.Context) {
 		}
 	})
 
-	cfg := a.timerConfigFromSettings(store.Get())
+	cfg := a.timerConfigFromSettings(a.settings.Get())
 	a.engine = timer.NewEngine(cfg)
 	a.reconcileAndPersistSoundSettings()
 	a.applyAudioSettings(a.settings.Get())
@@ -169,7 +186,14 @@ func (a *App) GetSettings() settings.Settings {
 	return a.reconcileSoundSettings(a.settings.Get())
 }
 
+func (a *App) GetSettingsStorageError() string {
+	return a.settingsStorageErr
+}
+
 func (a *App) SaveSettings(input settings.Settings) error {
+	if a.settings == nil {
+		return errors.New("settings store is not initialized")
+	}
 	if input.TalkMinutes < 0 || input.TalkSeconds < 0 || input.QuestionsMinutes < 0 || input.QuestionsSeconds < 0 {
 		return timer.ErrInvalidDuration
 	}
@@ -190,9 +214,7 @@ func (a *App) SaveSettings(input settings.Settings) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.settings != nil {
-		input = settings.KeepSession(input, a.settings.Get())
-	}
+	input = settings.KeepSession(input, a.settings.Get())
 	if err := a.settings.Save(input); err != nil {
 		return err
 	}

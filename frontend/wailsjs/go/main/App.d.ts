@@ -42,6 +42,8 @@ export function GetSessionTemplate():Promise<session.Template>;
 
 export function GetSettings():Promise<settings.Settings>;
 
+export function GetSettingsStorageError():Promise<string>;
+
 export function GetSounds():Promise<Array<audio.Sound>>;
 
 export function GetState():Promise<timer.Snapshot>;

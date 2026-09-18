@@ -18,6 +18,7 @@ import {
   GetSessionState,
   GetSessionTemplate,
   GetSettings,
+  GetSettingsStorageError,
   GetSounds,
   GetState,
   GoToQuestions,
@@ -519,8 +520,11 @@ function App() {
   const [widgetDurationInvalid, setWidgetDurationInvalid] = useState(false);
   const widgetDurationInputRef = useRef<HTMLInputElement>(null);
   const widgetDurationRef = useRef<HTMLDivElement>(null);
+  const settingsLoadedRef = useRef(false);
+  const lastSettingsRef = useRef<settings.Settings | null>(null);
+  const [settingsBootstrapComplete, setSettingsBootstrapComplete] = useState(false);
 
-  const settingsLocked = snapshot.isRunning;
+  const settingsLocked = snapshot.isRunning || !settingsBootstrapComplete;
   const settingsLockMessage = useMemo(() => {
     if (!settingsLocked) return '';
     if (snapshot.isPaused) {
@@ -569,7 +573,13 @@ function App() {
   ]);
 
   const persistSettings = useCallback(async (next?: Partial<settings.Settings>) => {
+    if (!settingsLoadedRef.current) {
+      return;
+    }
+
+    const base = lastSettingsRef.current ?? settings.Settings.createFrom({});
     const payload = settings.Settings.createFrom({
+      ...base,
       talkMinutes: next?.talkMinutes ?? talkMinutes,
       talkSeconds: next?.talkSeconds ?? talkSecondsPart,
       questionsMinutes: next?.questionsMinutes ?? questionsMinutes,
@@ -604,6 +614,7 @@ function App() {
     try {
       await SaveSettings(payload);
       const saved = settings.Settings.createFrom(await GetSettings());
+      lastSettingsRef.current = saved;
       setMuteConferenceSound(saved.muteConferenceSound ?? false);
       setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
       setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? true);
@@ -664,6 +675,7 @@ function App() {
 
   useEffect(() => {
     const bootstrap = async () => {
+      try {
       const [
         initialState,
         initialSettings,
@@ -673,6 +685,7 @@ function App() {
         initialAppInfo,
         initialSessionTemplate,
         initialSessionState,
+        settingsStorageError,
       ] = await Promise.all([
         GetState(),
         GetSettings(),
@@ -682,7 +695,12 @@ function App() {
         GetAppInfo(),
         GetSessionTemplate(),
         GetSessionState(),
+        GetSettingsStorageError(),
       ]);
+
+      const hydratedSettings = settings.Settings.createFrom(initialSettings);
+      lastSettingsRef.current = hydratedSettings;
+      settingsLoadedRef.current = true;
 
       setSnapshot(initialState as TimerSnapshot);
       setTalkMinutes(initialSettings.talkMinutes);
@@ -746,9 +764,18 @@ function App() {
       } else {
         setConferenceWizardStep(wizardStepForOpen(conference.phase));
       }
+      if (settingsStorageError) {
+        setSettingsError(settingsStorageError);
+      }
+      } finally {
+        setSettingsBootstrapComplete(true);
+      }
     };
 
-    bootstrap().catch((err) => setSettingsError(formatAppError(err)));
+    bootstrap().catch((err) => {
+      setSettingsError(formatAppError(err));
+      setSettingsBootstrapComplete(true);
+    });
   }, []);
 
   useEffect(() => {
@@ -933,7 +960,9 @@ function App() {
   const handleStart = async () => {
     closeWidgetDuration();
     try {
-      await persistSettings();
+      if (settingsLoadedRef.current) {
+        await persistSettings();
+      }
       await Start();
     } catch {
       // Ошибки настроек показываются в панели настроек.
@@ -1479,6 +1508,7 @@ function App() {
             <button
               className={`widget-primary widget-action-${widgetAction}`}
               onClick={widgetIsRunning ? () => Pause() : handleStart}
+              disabled={!settingsBootstrapComplete}
               aria-label={widgetActionLabel}
               title={widgetActionLabel}
             >
@@ -1659,7 +1689,7 @@ function App() {
         </div>
 
         <nav className="controls" aria-label="Управление таймером">
-          <button className="icon-button control-play" onClick={handleStart} disabled={snapshot.isRunning && !snapshot.isPaused} aria-label="Запустить" title="Запустить">
+          <button className="icon-button control-play" onClick={handleStart} disabled={!settingsBootstrapComplete || (snapshot.isRunning && !snapshot.isPaused)} aria-label="Запустить" title="Запустить">
             {icon('play')}
           </button>
           <button className="icon-button control-pause" onClick={() => Pause()} disabled={!snapshot.isRunning || snapshot.isPaused} aria-label="Пауза" title="Пауза">

@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -371,6 +372,67 @@ func TestNormalizeWidgetPlacement(t *testing.T) {
 	}
 	if NormalizeWidgetPlacement(WidgetPlacementTopCenter) != WidgetPlacementTopCenter {
 		t.Fatal("topCenter placement should stay topCenter")
+	}
+}
+
+func TestLoadCorruptJSONBacksUpAndKeepsDiskPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(path, []byte(`{not-json`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := &Store{
+		path:     path,
+		settings: Default(),
+	}
+	if err := store.load(); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected ErrNotExist after corrupt backup, got %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("corrupt settings file should be moved aside: %v", err)
+	}
+	if _, err := os.Stat(path + ".bak"); err != nil {
+		t.Fatalf("corrupt settings should be backed up: %v", err)
+	}
+	if !store.PersistsToDisk() {
+		t.Fatal("store should keep disk path after corrupt load")
+	}
+}
+
+func TestMemoryStoreSaveDoesNotWriteFile(t *testing.T) {
+	dir := t.TempDir()
+	store := NewMemoryStore()
+	store.settings.AppTheme = AppThemeLight
+	if err := store.Save(store.settings); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("memory store should not create files: %+v", entries)
+	}
+}
+
+func TestSaveKeepsStoredSoundIDWhenInputEmpty(t *testing.T) {
+	store := &Store{
+		path: filepath.Join(t.TempDir(), "settings.json"),
+		settings: func() Settings {
+			s := Default()
+			s.SoundID = "custom:abc123"
+			return s
+		}(),
+	}
+	input := Default()
+	input.SoundID = ""
+	if err := store.Save(input); err != nil {
+		t.Fatal(err)
+	}
+	got := store.Get()
+	if got.SoundID != "custom:abc123" {
+		t.Fatalf("empty sound id should keep stored value, got %q", got.SoundID)
 	}
 }
 
