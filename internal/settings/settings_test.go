@@ -30,7 +30,7 @@ func TestLoadOldJSONKeepsReminderDefault(t *testing.T) {
 	if got.TimerScalePercent != DefaultTimerScalePercent {
 		t.Fatalf("old settings did not receive timerScalePercent default: %+v", got)
 	}
-	if got.TimerDisplayMode != TimerDisplayModeRing || got.TimerFont != TimerFontSystem {
+	if got.TimerDisplayMode != TimerDisplayModeRing || got.TimerFont != TimerFontDigital {
 		t.Fatalf("old settings did not receive timer display defaults: %+v", got)
 	}
 	if got.WidgetPlacement != WidgetPlacementFree {
@@ -261,7 +261,7 @@ func TestNormalizeWidgetAppearance(t *testing.T) {
 	value.WidgetTheme = "invalid"
 	value.WidgetShape = "invalid"
 	got := normalize(value, Default())
-	if got.WidgetTheme != WidgetThemeDark || got.WidgetShape != WidgetShapeRounded {
+	if got.WidgetTheme != WidgetThemeTransparent || got.WidgetShape != WidgetShapeRounded {
 		t.Fatalf("invalid widget appearance was not normalized: %+v", got)
 	}
 
@@ -292,8 +292,8 @@ func TestNormalizeWidgetBackgroundTransparency(t *testing.T) {
 	}
 	value.WidgetTheme = WidgetThemeTransparent
 	value.WidgetBackgroundTransparency = 0
-	if got := normalize(value, Default()); got.WidgetBackgroundTransparency != LegacyTransparentBackgroundTransparency {
-		t.Fatalf("legacy transparent theme was not migrated: %d", got.WidgetBackgroundTransparency)
+	if got := normalize(value, Default()); got.WidgetBackgroundTransparency != MinWidgetBackgroundTransparency {
+		t.Fatalf("transparent theme should keep zero background transparency: %d", got.WidgetBackgroundTransparency)
 	}
 }
 
@@ -319,8 +319,8 @@ func TestNormalizeTimerFont(t *testing.T) {
 	if normalizeTimerFont("system") != TimerFontSystem {
 		t.Fatal("system timer font should stay system")
 	}
-	if normalizeTimerFont("INVALID") != TimerFontSystem {
-		t.Fatal("invalid timer font should fall back to system")
+	if normalizeTimerFont("INVALID") != TimerFontDigital {
+		t.Fatal("invalid timer font should fall back to digital")
 	}
 }
 

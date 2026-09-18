@@ -83,7 +83,6 @@ const (
 	MinWidgetBackgroundTransparency = 0
 	MaxWidgetBackgroundTransparency = 100
 	DefaultWidgetBackgroundTransparency = 0
-	LegacyTransparentBackgroundTransparency = 82
 	WidgetQuickPresetCount = 4
 	MaxTalkDurationMinutes = 180
 )
@@ -120,15 +119,15 @@ func Default() Settings {
 		Volume:                     0.85,
 		MuteConferenceSound:        false,
 		MuteConferenceReceive:      true,
-		ConferenceCameraEnabled:    false,
+		ConferenceCameraEnabled:    true,
 		SessionUseDefaultTalk:      true,
 		SessionUseDefaultQuestions: true,
 		TimerScalePercent:          DefaultTimerScalePercent,
 		TimerDisplayMode:           TimerDisplayModeRing,
-		TimerFont:                  TimerFontSystem,
+		TimerFont:                  TimerFontDigital,
 		WidgetPlacement:            WidgetPlacementFree,
 		AppTheme:                   AppThemeDark,
-		WidgetTheme:                WidgetThemeDark,
+		WidgetTheme:                WidgetThemeTransparent,
 		WidgetShape:                WidgetShapeRounded,
 		WidgetBackgroundTransparency: DefaultWidgetBackgroundTransparency,
 		WidgetFreeX:                0,
@@ -337,19 +336,18 @@ func normalize(value, fallback Settings) Settings {
 	switch value.WidgetTheme {
 	case "violet":
 		value.WidgetTheme = WidgetThemeTransparent
-	case WidgetThemeLight, WidgetThemeGreen, WidgetThemeTransparent:
+	case WidgetThemeDark, WidgetThemeLight, WidgetThemeGreen, WidgetThemeTransparent:
 	default:
-		value.WidgetTheme = WidgetThemeDark
+		value.WidgetTheme = fallback.WidgetTheme
+		if value.WidgetTheme == "" {
+			value.WidgetTheme = WidgetThemeTransparent
+		}
 	}
 	if value.WidgetBackgroundTransparency < MinWidgetBackgroundTransparency {
 		value.WidgetBackgroundTransparency = MinWidgetBackgroundTransparency
 	}
 	if value.WidgetBackgroundTransparency > MaxWidgetBackgroundTransparency {
 		value.WidgetBackgroundTransparency = MaxWidgetBackgroundTransparency
-	}
-	// Older configs used the "transparent" theme as a boolean switch.
-	if value.WidgetTheme == WidgetThemeTransparent && value.WidgetBackgroundTransparency == 0 {
-		value.WidgetBackgroundTransparency = LegacyTransparentBackgroundTransparency
 	}
 	switch value.WidgetShape {
 	case WidgetShapeRectangular:
@@ -369,7 +367,7 @@ func normalizeTimerFont(font string) string {
 	if timerFontIDPattern.MatchString(font) && font != TimerFontSystem {
 		return font
 	}
-	return TimerFontSystem
+	return TimerFontDigital
 }
 
 func normalizeWidgetQuickPresets(value []DurationPreset) []DurationPreset {

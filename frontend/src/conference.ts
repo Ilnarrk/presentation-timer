@@ -46,7 +46,7 @@ export const initialConferenceState: ConferenceState = {
   message: 'Участник не подключён',
   tested: false,
   browserVisible: false,
-  cameraEnabled: false,
+  cameraEnabled: true,
   updatedAt: 0,
 };
 
@@ -62,7 +62,7 @@ export const conferencePhaseLabels: Record<ConferencePhase, string> = {
 };
 
 const RECENT_KEY = 'presentation-timer.conference.recent';
-const MAX_RECENT = 5;
+const MAX_RECENT = 3;
 
 export function isConferenceConnecting(phase: ConferencePhase): boolean {
   return phase === 'opening' || phase === 'connecting' || phase === 'waitingAdmission';

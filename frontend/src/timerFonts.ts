@@ -24,6 +24,10 @@ for (const [path, url] of Object.entries(fontFiles)) {
   }
 }
 
+export const DEFAULT_TIMER_FONT_ID = 'digital';
+
+const TIMER_DIGIT_FONT_FALLBACK = '"Segoe UI", system-ui, -apple-system, sans-serif';
+
 export const TIMER_FONT_OPTIONS: Array<{ id: string; label: string }> = [
   { id: 'system', label: 'Системный' },
   ...entries.map((entry) => ({ id: entry.id, label: entry.label })),
@@ -35,7 +39,7 @@ export function timerFontClass(fontId: string): string {
   if (fontId === 'system') {
     return 'timer-font-system';
   }
-  return entryById.has(fontId) ? `timer-font-${fontId}` : 'timer-font-system';
+  return entryById.has(fontId) ? `timer-font-${fontId}` : `timer-font-${DEFAULT_TIMER_FONT_ID}`;
 }
 
 export function timerFontFamily(fontId: string): string | null {
@@ -51,7 +55,7 @@ export function timerFontStyle(fontId: string): Record<string, string> {
     return {};
   }
   return {
-    '--timer-digit-font-family': `"${family}", "Courier New", monospace`,
+    '--timer-digit-font-family': `"${family}", ${TIMER_DIGIT_FONT_FALLBACK}`,
   };
 }
 

@@ -1,4 +1,3 @@
-import { useState, type ReactNode } from 'react';
 import {
   conferenceUiState,
   isConferenceConnecting,
@@ -63,6 +62,32 @@ function LinkIcon() {
   );
 }
 
+function DisconnectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 5v6" />
+      <path d="M16 5v6" />
+      <path d="M6 10h12v2a6 6 0 0 1-12 0v-2Z" />
+      <path d="M12 18v3" />
+    </svg>
+  );
+}
+
+function WizardNavIcon({ name }: { name: 'back' | 'next' | 'check' }) {
+  if (name === 'check') {
+    return (
+      <svg className="wizard-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="m6.5 12.5 4 4 8.5-8.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="wizard-nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d={name === 'back' ? 'm14.5 6.5-6 6 6 6' : 'm9.5 6.5 6 6-6 6'} />
+    </svg>
+  );
+}
+
 type CheckState = 'pending' | 'loading' | 'success' | 'error';
 
 function CheckItem({
@@ -74,7 +99,7 @@ function CheckItem({
   state: CheckState;
   title: string;
   description: string;
-  children?: ReactNode;
+  children?: React.ReactNode;
 }) {
   return (
     <li className={`wizard-check-item is-${state}`}>
@@ -90,14 +115,31 @@ function CheckItem({
   );
 }
 
-function AudioWave({ active }: { active: boolean }) {
+function AudioWave({
+  active,
+  tested,
+  disabled,
+  onClick,
+}: {
+  active: boolean;
+  tested: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className={`wizard-wave${active ? ' is-active' : ''}`} aria-hidden="true">
-      <svg className="wizard-speaker" viewBox="0 0 24 24">
+    <button
+      type="button"
+      className={`wizard-wave${active ? ' is-active' : ''}${tested ? ' is-tested' : ''}`}
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={active ? 'Воспроизводим тестовый сигнал' : 'Проверить звук'}
+      title={active ? 'Воспроизводим…' : 'Проверить звук'}
+    >
+      <svg className="wizard-speaker" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M5 9v6h4l5 4V5L9 9H5Zm12.5-.5a5 5 0 0 1 0 7" />
       </svg>
       <span /><span /><span /><span /><span /><span /><span />
-    </div>
+    </button>
   );
 }
 
@@ -130,7 +172,6 @@ export function ConferenceWizard({
   onDone,
   onDiagnostics,
 }: ConferenceWizardProps) {
-  const [recentOpen, setRecentOpen] = useState(false);
   const connecting = isConferenceConnecting(state.phase);
   const joined = isConferenceJoined(state.phase);
   const uiState = conferenceUiState(state, action, testing);
@@ -157,6 +198,8 @@ export function ConferenceWizard({
         ? 'success'
         : 'pending';
 
+  const confirmLabel = uiState === 'waiting_for_user' ? 'Я подключился' : 'Подтвердить';
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="modal connection-modal wizard-modal" role="dialog" aria-modal="true" aria-labelledby="connection-title">
@@ -168,17 +211,27 @@ export function ConferenceWizard({
             </h2>
             <p className="modal-copy">
               {effectiveStep === 1
-                ? 'Укажите ссылку на встречу и ваше имя, чтобы таймер мог присоединиться к конференции.'
+                ? 'Укажите имя и ссылку на встречу, чтобы таймер мог присоединиться к конференции.'
                 : effectiveStep === 2
-                  ? 'Подключаемся к встрече и проверяем звук. Это займёт несколько секунд.'
+                  ? 'Подключаемся к встрече. При необходимости проверьте звук по кнопке с динамиком.'
                   : 'Таймер успешно присоединился к встрече и готов к работе.'}
             </p>
           </div>
         </header>
 
-        <div className="wizard-body">
+        <div className={`wizard-body${effectiveStep === 1 ? ' is-step-1' : ''}`}>
           {effectiveStep === 1 && (
-            <div className="wizard-form">
+            <div className="wizard-step-panel wizard-form">
+              <label className="wizard-field">
+                <span className="wizard-section-label">Имя участника</span>
+                <input
+                  type="text"
+                  maxLength={80}
+                  value={conferenceName}
+                  onChange={(event) => onNameChange(event.target.value)}
+                  autoFocus
+                />
+              </label>
               <label>
                 Ссылка на встречу
                 <span className={`wizard-url-input${validationError ? ' has-error' : ''}`}>
@@ -190,7 +243,6 @@ export function ConferenceWizard({
                     aria-invalid={Boolean(validationError)}
                     aria-describedby={validationError ? 'conference-url-error' : 'conference-url-help'}
                     onChange={(event) => onUrlChange(event.target.value)}
-                    autoFocus
                   />
                 </span>
                 {validationError ? (
@@ -199,13 +251,13 @@ export function ConferenceWizard({
                   </span>
                 ) : (
                   <span className="wizard-field-help" id="conference-url-help">
-                    SaluteJazz, Яндекс Телемост, Контур.Толк, МТС Линк, MINT и корпоративные ВКС
+                    SaluteJazz, Яндекс Телемост, Контур.Толк, МТС Линк, MINT
                   </span>
                 )}
               </label>
               {recent.length > 0 && (
-                <details className="wizard-recent" open={recentOpen} onToggle={(event) => setRecentOpen(event.currentTarget.open)}>
-                  <summary>Недавние встречи <span aria-hidden="true">⌄</span></summary>
+                <div className="wizard-recent">
+                  <span className="wizard-section-label">Недавние встречи</span>
                   <ul>
                     {recent.map((item) => (
                       <li key={item.url}>
@@ -213,43 +265,21 @@ export function ConferenceWizard({
                           type="button"
                           className="wizard-recent-item"
                           title={item.url}
-                          onClick={() => {
-                            onSelectRecent(item.url);
-                            setRecentOpen(false);
-                          }}
+                          onClick={() => onSelectRecent(item.url)}
                         >
                           <span className="wizard-recent-title">{item.title}</span>
-                          <span className="wizard-recent-url">{item.host}</span>
+                          <span className="wizard-recent-host">{item.host}</span>
                         </button>
                       </li>
                     ))}
                   </ul>
-                </details>
+                </div>
               )}
-              <label>
-                Имя участника
-                <input
-                  type="text"
-                  maxLength={80}
-                  value={conferenceName}
-                  onChange={(event) => onNameChange(event.target.value)}
-                />
-              </label>
-              <label className="settings-checkbox conference-camera-toggle">
-                <input
-                  type="checkbox"
-                  checked={cameraEnabled}
-                  disabled={busy}
-                  onChange={(event) => onCameraToggle(event.target.checked)}
-                />
-                <span>Показывать отсчёт в камере</span>
-                <span className="wizard-help" title="Таймер будет передавать изображение отсчёта как виртуальную камеру" aria-label="Подробнее об отсчёте в камере">?</span>
-              </label>
             </div>
           )}
 
           {effectiveStep === 2 && (
-            <div className="wizard-check">
+            <div className="wizard-step-panel wizard-check">
               <ol className="wizard-check-list">
                 <CheckItem
                   state={connectionCheck}
@@ -260,15 +290,7 @@ export function ConferenceWizard({
                     <div className="wizard-browser-action">
                       <strong>Требуется действие в браузере</strong>
                       <span>Завершите вход или дождитесь допуска организатора, затем подтвердите подключение.</span>
-                      <button className="wizard-inline-action" type="button" disabled={busy} onClick={onManualConfirm}>
-                        Я подключился
-                      </button>
                     </div>
-                  )}
-                  {uiState === 'connecting' && (
-                    <button className="wizard-inline-action" type="button" disabled={busy} onClick={onManualConfirm}>
-                      Уже вошли? Подтвердить
-                    </button>
                   )}
                 </CheckItem>
                 <CheckItem
@@ -278,14 +300,21 @@ export function ConferenceWizard({
                     ? 'Воспроизводим тестовый сигнал...'
                     : state.tested
                       ? 'Тестовый сигнал отправлен в конференцию'
-                      : 'Нужно вручную убедиться, что сигнал слышно')}
+                      : 'Нажмите на динамик, чтобы проверить звук')}
                 >
-                  {joined && <AudioWave active={testing} />}
+                  {joined && (
+                    <AudioWave
+                      active={testing}
+                      tested={state.tested}
+                      disabled={busy || testing}
+                      onClick={onTestSound}
+                    />
+                  )}
                 </CheckItem>
                 <CheckItem
-                  state={state.tested ? 'success' : 'pending'}
+                  state={joined ? 'success' : 'pending'}
                   title="Готово"
-                  description={state.tested ? 'Таймер готов к работе' : 'Проверяем, что таймер слышно'}
+                  description={joined ? 'Таймер готов к работе' : 'Дождитесь подключения'}
                 />
               </ol>
               {connectionError && (
@@ -303,7 +332,7 @@ export function ConferenceWizard({
           )}
 
           {joined && effectiveStep === 3 && (
-            <div className="wizard-summary">
+            <div className="wizard-step-panel wizard-summary">
               <div className="wizard-success-icon" aria-hidden="true">✓</div>
               <dl className="wizard-facts">
                 <div>
@@ -329,40 +358,86 @@ export function ConferenceWizard({
                   <dd>{state.tested ? 'Проверен' : 'Не проверен'}</dd>
                 </div>
               </dl>
-              <button className="wizard-disconnect" disabled={busy} onClick={onDisconnect}>
-                {uiState === 'disconnecting' ? 'Отключаем…' : 'Отключиться от ВКС'}
+              <button
+                className="wizard-disconnect text-button danger"
+                type="button"
+                disabled={busy}
+                onClick={onDisconnect}
+              >
+                <DisconnectIcon />
+                <span>{uiState === 'disconnecting' ? 'Отключаем…' : 'Отключиться от ВКС'}</span>
               </button>
             </div>
           )}
         </div>
 
+        {effectiveStep === 1 && (
+          <div className="wizard-step-options">
+            <p className="wizard-help-tooltip" id="wizard-camera-help" role="tooltip">
+              Таймер будет передавать изображение отсчёта как виртуальную камеру
+            </p>
+            <div className="wizard-camera-option">
+              <label className="settings-checkbox conference-camera-toggle">
+                <input
+                  type="checkbox"
+                  checked={cameraEnabled}
+                  disabled={busy}
+                  onChange={(event) => onCameraToggle(event.target.checked)}
+                />
+                <span>Показывать отсчёт в камере</span>
+              </label>
+              <span className="wizard-help-wrap">
+                <button
+                  type="button"
+                  className="wizard-help-trigger"
+                  aria-label="Подробнее об отсчёте в камере"
+                  aria-describedby="wizard-camera-help"
+                >
+                  ?
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
+
         <footer className="wizard-footer">
           {effectiveStep === 1 ? (
             <>
               <button className="text-button secondary" disabled={busy} onClick={onSkip}>Пропустить</button>
-              <button className="text-button primary" disabled={busy} onClick={onConnect}>
-                {uiState === 'validating' ? 'Проверяем…' : 'Далее →'}
+              <button className="text-button primary wizard-nav-button" disabled={busy} onClick={onConnect}>
+                <span>{uiState === 'validating' ? 'Проверяем…' : 'Далее'}</span>
+                {uiState !== 'validating' && <WizardNavIcon name="next" />}
               </button>
             </>
           ) : effectiveStep === 2 ? (
             <>
-              <button className="text-button secondary" disabled={busy} onClick={connectionError ? onEditDetails : onCancelConnect}>← Назад</button>
+              <button className="text-button secondary wizard-nav-button" disabled={busy} onClick={connectionError ? onEditDetails : onCancelConnect}>
+                <WizardNavIcon name="back" />
+                <span>Назад</span>
+              </button>
               {connectionError ? (
                 <button className="text-button primary" disabled={busy} onClick={onRetry}>Повторить</button>
               ) : !joined ? (
-                <button className="text-button primary" disabled>Проверяем...</button>
-              ) : state.tested && !testing ? (
-                <button className="text-button primary" disabled={busy} onClick={onNext}>Далее →</button>
+                <button className="text-button primary" disabled={busy} onClick={onManualConfirm}>
+                  {confirmLabel}
+                </button>
               ) : (
-                <button className="text-button primary" disabled={busy || testing} onClick={onTestSound}>
-                  {testing ? 'Проверяем...' : 'Проверить звук'}
+                <button className="text-button primary wizard-nav-button" disabled={busy} onClick={onNext}>
+                  <span>Далее</span>
+                  <WizardNavIcon name="next" />
                 </button>
               )}
             </>
           ) : (
             <>
-              <button className="text-button secondary" disabled={busy} onClick={onBackToCheck}>← Назад</button>
-              <button className="text-button primary" disabled={busy} onClick={onDone}>✓ Готово</button>
+              <button className="text-button secondary wizard-nav-button" disabled={busy} onClick={onBackToCheck}>
+                <WizardNavIcon name="back" />
+                <span>Назад</span>
+              </button>
+              <button className="text-button primary wizard-nav-button" disabled={busy} onClick={onDone}>
+                <WizardNavIcon name="check" />
+                <span>Готово</span>
+              </button>
             </>
           )}
         </footer>

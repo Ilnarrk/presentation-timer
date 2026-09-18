@@ -63,7 +63,7 @@ import {
   type ConferenceWizardStep,
   type RecentConference,
 } from './conference';
-import { TIMER_FONT_OPTIONS, timerFontClass, timerFontStyle } from './timerFonts';
+import { DEFAULT_TIMER_FONT_ID, TIMER_FONT_OPTIONS, timerFontClass, timerFontStyle } from './timerFonts';
 import {
   buildWidgetColorStyle,
   EMPTY_WIDGET_COLORS,
@@ -452,7 +452,7 @@ function App() {
   const [volume, setVolume] = useState(0.85);
   const [muteConferenceSound, setMuteConferenceSound] = useState(false);
   const [muteConferenceReceive, setMuteConferenceReceive] = useState(true);
-  const [conferenceCameraEnabled, setConferenceCameraEnabled] = useState(false);
+  const [conferenceCameraEnabled, setConferenceCameraEnabled] = useState(true);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [sounds, setSounds] = useState<SoundOption[]>([]);
   const [conferenceUrl, setConferenceUrl] = useState('');
@@ -503,10 +503,10 @@ function App() {
   });
   const [timerScalePercent, setTimerScalePercent] = useState(DEFAULT_TIMER_SCALE);
   const [timerDisplayMode, setTimerDisplayMode] = useState<TimerDisplayMode>('ring');
-  const [timerFont, setTimerFont] = useState<TimerFont>('system');
+  const [timerFont, setTimerFont] = useState<TimerFont>(DEFAULT_TIMER_FONT_ID);
   const [widgetPlacement, setWidgetPlacement] = useState<WidgetPlacement>('free');
   const [appTheme, setAppTheme] = useState<AppTheme>('dark');
-  const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('dark');
+  const [widgetTheme, setWidgetTheme] = useState<WidgetTheme>('transparent');
   const [widgetShape, setWidgetShape] = useState<WidgetShape>('rounded');
   const [widgetQuickPresets, setWidgetQuickPresets] = useState<DurationPreset[]>(DEFAULT_WIDGET_QUICK_PRESETS);
   const [widgetBackgroundTransparency, setWidgetBackgroundTransparency] = useState(0);
@@ -606,13 +606,13 @@ function App() {
       const saved = settings.Settings.createFrom(await GetSettings());
       setMuteConferenceSound(saved.muteConferenceSound ?? false);
       setMuteConferenceReceive(saved.muteConferenceReceive ?? true);
-      setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? false);
+      setConferenceCameraEnabled(saved.conferenceCameraEnabled ?? true);
       setTimerScalePercent(saved.timerScalePercent || DEFAULT_TIMER_SCALE);
       setTimerDisplayMode((saved.timerDisplayMode as TimerDisplayMode) || 'ring');
-      setTimerFont((saved.timerFont as TimerFont) || 'system');
+      setTimerFont((saved.timerFont as TimerFont) || DEFAULT_TIMER_FONT_ID);
       setWidgetPlacement((saved.widgetPlacement as WidgetPlacement) || 'free');
       setAppTheme((saved.appTheme as AppTheme) || 'dark');
-      setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'dark');
+      setWidgetTheme((saved.widgetTheme as WidgetTheme) || 'transparent');
       setWidgetShape((saved.widgetShape as WidgetShape) || 'rounded');
       setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, saved.widgetBackgroundTransparency ?? 0)));
       setWidgetColors({
@@ -704,13 +704,13 @@ function App() {
       setVolume(initialSettings.volume);
       setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
       setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
-      setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? false);
+      setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? true);
       setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
       setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
-      setTimerFont((initialSettings.timerFont as TimerFont) || 'system');
+      setTimerFont((initialSettings.timerFont as TimerFont) || DEFAULT_TIMER_FONT_ID);
       setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'free');
       setAppTheme((initialSettings.appTheme as AppTheme) || 'dark');
-      setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'dark');
+      setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'transparent');
       setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
       setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, initialSettings.widgetBackgroundTransparency ?? 0)));
       setWidgetColors({
@@ -1429,7 +1429,7 @@ function App() {
     hasOvertime: timerHasOvertime,
   });
 
-  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check' | 'sun' | 'moon') => {
+  const icon = (name: 'play' | 'playOutline' | 'pause' | 'questions' | 'next' | 'reset' | 'disconnect' | 'upload' | 'settings' | 'close' | 'browserShow' | 'browserHide' | 'eye' | 'eyeOff' | 'queue' | 'trash' | 'widget' | 'restore' | 'clock' | 'edit' | 'check' | 'sun' | 'moon') => {
     const paths = {
       play: <path d="M9 6.8v10.4c0 .8.9 1.3 1.6.8l8.2-5.2a.95.95 0 0 0 0-1.6L10.6 6c-.7-.5-1.6 0-1.6.8Z" />,
       playOutline: <path d="M9 7.2v9.6L17.8 12 9 7.2Z" />,
@@ -1443,6 +1443,8 @@ function App() {
       close: <><path d="m7 7 10 10" /><path d="M17 7 7 17" /></>,
       browserShow: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><circle cx="6.5" cy="7.5" r="0.8" fill="currentColor" stroke="none" /><circle cx="9" cy="7.5" r="0.8" fill="currentColor" stroke="none" /></>,
       browserHide: <><rect x="3.5" y="5.5" width="17" height="13" rx="2" /><path d="M3.5 9.5h17" /><path d="M8 15h8" /></>,
+      eye: <><path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.5" /></>,
+      eyeOff: <><path d="M10.6 10.6a2.5 2.5 0 0 0 3.5 3.5" /><path d="M7.2 7.8C5.4 9.1 3.8 11 2.5 12c1.3 1 2.9 2.9 4.7 4.2" /><path d="M16.8 16.2c1.8-1.3 3.4-3.2 4.7-4.2-1.3-1-2.9-2.9-4.7-4.2" /><path d="m9.5 5.5 5 13" /></>,
       queue: <><path d="M8 7h11" /><path d="M8 12h11" /><path d="M8 17h11" /><circle cx="5" cy="7" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1" fill="currentColor" stroke="none" /></>,
       trash: <><path d="M5 7h14" /><path d="M9.5 7V5.5h5V7" /><path d="M8 7l.7 11.5h6.6L16 7" /></>,
       widget: <><rect x="4.5" y="4.5" width="15" height="15" rx="2.5" /><rect x="13" y="6.5" width="5.5" height="4.5" rx="1" /></>,
@@ -1598,15 +1600,18 @@ function App() {
             {icon('widget')}
           </button>
           {conferenceActive && (
-            <button
-              className={`icon-button quiet conference-browser-toggle${conferenceState.browserVisible ? ' is-visible' : ''}`}
-              disabled={conferenceBusy}
-              onClick={handleConferenceBrowserToggle}
-              aria-label={conferenceState.browserVisible ? 'Скрыть окно браузера ВКС' : 'Показать окно браузера ВКС'}
-              title={conferenceState.browserVisible ? 'Скрыть окно ВКС' : 'Показать окно ВКС'}
-            >
-              {icon(conferenceState.browserVisible ? 'browserHide' : 'browserShow')}
-            </button>
+            <>
+              <span className="topbar-left-divider" aria-hidden="true" />
+              <button
+                className={`icon-button quiet conference-browser-toggle${conferenceState.browserVisible ? ' is-visible' : ''}`}
+                disabled={conferenceBusy}
+                onClick={handleConferenceBrowserToggle}
+                aria-label={conferenceState.browserVisible ? 'Скрыть окно браузера ВКС' : 'Показать окно браузера ВКС'}
+                title={conferenceState.browserVisible ? 'Скрыть окно ВКС' : 'Показать окно ВКС'}
+              >
+                {icon(conferenceState.browserVisible ? 'eyeOff' : 'eye')}
+              </button>
+            </>
           )}
         </div>
         <div className="topbar-right">
