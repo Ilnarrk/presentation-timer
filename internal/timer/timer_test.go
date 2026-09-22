@@ -259,6 +259,68 @@ func TestSetTalkDurationWhilePausedOvertimeResetsTalkCycle(t *testing.T) {
 	}
 }
 
+func TestSetTalkDurationWhilePausedQuestionsResetsToPausedTalk(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	engine := NewEngineWithClock(testConfig(), clock)
+
+	_ = engine.Start()
+	if err := engine.GoToQuestions(); err != nil {
+		t.Fatalf("go to questions: %v", err)
+	}
+	clock.Advance(30 * time.Second)
+	engine.Pause()
+
+	if err := engine.SetTalkDuration(12*time.Minute + 30*time.Second); err != nil {
+		t.Fatalf("set talk duration: %v", err)
+	}
+	snap := engine.Snapshot()
+	if snap.Phase != PhaseTalk || !snap.IsPaused || snap.RemainingSeconds != 750 || snap.TalkSeconds != 750 {
+		t.Fatalf("questions pause was not replaced by paused talk: %+v", snap)
+	}
+
+	clock.Advance(2 * time.Minute)
+	if got := engine.Snapshot(); got.RemainingSeconds != 750 || !got.IsPaused {
+		t.Fatalf("paused selected duration changed: %+v", got)
+	}
+}
+
+func TestPausedOvertimeFreezesDisplayAndReminderSchedule(t *testing.T) {
+	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
+	cfg := testConfig()
+	cfg.ReminderInterval = time.Minute
+	engine := NewEngineWithClock(cfg, clock)
+
+	var alerts []AlertEvent
+	engine.SetCallbacks(nil, func(event AlertEvent) { alerts = append(alerts, event) })
+	_ = engine.Start()
+	clock.Advance(10*time.Minute + 45*time.Second)
+	engine.tick()
+	engine.Pause()
+
+	if got := engine.Snapshot(); got.OvertimeSeconds != 45 || !got.IsPaused {
+		t.Fatalf("unexpected paused overtime: %+v", got)
+	}
+	clock.Advance(3 * time.Minute)
+	if got := engine.Snapshot(); got.OvertimeSeconds != 45 || len(alerts) != 1 {
+		t.Fatalf("paused overtime continued in background: %+v alerts=%+v", got, alerts)
+	}
+
+	_ = engine.Start()
+	clock.Advance(14 * time.Second)
+	engine.tick()
+	if len(alerts) != 1 {
+		t.Fatalf("reminder fired too early after resume: %+v", alerts)
+	}
+	clock.Advance(time.Second)
+	engine.tick()
+	if len(alerts) != 2 || !alerts[1].Repeated {
+		t.Fatalf("reminder did not fire at the preserved one-minute boundary: %+v", alerts)
+	}
+	if got := engine.Snapshot().OvertimeSeconds; got != 60 {
+		t.Fatalf("overtime did not resume from paused value: %d", got)
+	}
+}
+
 func TestSetTalkDurationWhileRunningRejected(t *testing.T) {
 	clock := NewFakeClock(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 	engine := NewEngineWithClock(testConfig(), clock)

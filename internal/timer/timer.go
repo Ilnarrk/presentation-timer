@@ -53,6 +53,8 @@ type Engine struct {
 	deadline      time.Time
 	pausedLeft    time.Duration
 	overtimeStartedAt time.Time
+	pausedOvertime time.Duration
+	pausedReminderIn time.Duration
 	lastAlertAt   time.Time
 	alertActive   bool
 	reminderDueAt time.Time
@@ -100,7 +102,8 @@ func (e *Engine) UpdateConfig(cfg Config) {
 
 // SetTalkDuration changes the configured talk duration.
 // While paused in talk, the remaining time is replaced with the new duration.
-// While paused in talk overtime, the engine resets to a fresh paused talk cycle.
+// While paused in talk/questions or either overtime phase, the engine resets to
+// a fresh paused talk cycle.
 // Active running timers reject the change.
 func (e *Engine) SetTalkDuration(duration time.Duration) error {
 	e.mu.Lock()
@@ -116,10 +119,12 @@ func (e *Engine) SetTalkDuration(duration time.Duration) error {
 		switch e.phase {
 		case PhaseTalk:
 			e.pausedLeft = duration
-		case PhaseTalkOvertime:
+		case PhaseTalkOvertime, PhaseQuestions, PhaseQuestionsOvertime:
 			e.phase = PhaseTalk
 			e.pausedLeft = duration
 			e.overtimeStartedAt = time.Time{}
+			e.pausedOvertime = 0
+			e.pausedReminderIn = 0
 			e.lastAlertAt = time.Time{}
 			e.alertActive = false
 			e.reminderDueAt = time.Time{}
@@ -148,7 +153,12 @@ func (e *Engine) Start() error {
 
 	if e.isPaused {
 		e.isPaused = false
-		if e.pausedLeft > 0 {
+		if e.isOvertimePhaseLocked() {
+			e.overtimeStartedAt = e.clock.Now().Add(-e.pausedOvertime)
+			e.reminderDueAt = e.clock.Now().Add(e.pausedReminderIn)
+			e.pausedOvertime = 0
+			e.pausedReminderIn = 0
+		} else if e.pausedLeft > 0 {
 			e.deadline = e.clock.Now().Add(e.pausedLeft)
 		}
 		e.pausedLeft = 0
@@ -163,6 +173,8 @@ func (e *Engine) Start() error {
 	e.deadline = e.clock.Now().Add(e.cfg.TalkDuration)
 	e.lastAlertAt = time.Time{}
 	e.overtimeStartedAt = time.Time{}
+	e.pausedOvertime = 0
+	e.pausedReminderIn = 0
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -180,7 +192,14 @@ func (e *Engine) Pause() {
 
 	now := e.clock.Now()
 	if e.isOvertimePhaseLocked() {
-		e.pausedLeft = 0
+		e.pausedOvertime = now.Sub(e.overtimeStartedAt)
+		if e.pausedOvertime < 0 {
+			e.pausedOvertime = 0
+		}
+		e.pausedReminderIn = e.reminderDueAt.Sub(now)
+		if e.pausedReminderIn < 0 {
+			e.pausedReminderIn = 0
+		}
 	} else if !e.deadline.IsZero() {
 		e.pausedLeft = e.deadline.Sub(now)
 		if e.pausedLeft < 0 {
@@ -203,6 +222,8 @@ func (e *Engine) Reset() {
 	e.pausedLeft = 0
 	e.lastAlertAt = time.Time{}
 	e.overtimeStartedAt = time.Time{}
+	e.pausedOvertime = 0
+	e.pausedReminderIn = 0
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.stopTickerLocked()
@@ -226,6 +247,8 @@ func (e *Engine) GoToQuestions() error {
 	e.deadline = e.clock.Now().Add(e.cfg.QuestionsDuration)
 	e.lastAlertAt = time.Time{}
 	e.overtimeStartedAt = time.Time{}
+	e.pausedOvertime = 0
+	e.pausedReminderIn = 0
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -251,6 +274,8 @@ func (e *Engine) NextSpeaker() error {
 	e.deadline = e.clock.Now().Add(e.cfg.TalkDuration)
 	e.lastAlertAt = time.Time{}
 	e.overtimeStartedAt = time.Time{}
+	e.pausedOvertime = 0
+	e.pausedReminderIn = 0
 	e.alertActive = false
 	e.reminderDueAt = time.Time{}
 	e.ensureTickerLocked()
@@ -364,7 +389,7 @@ func (e *Engine) computeTimesLocked() (remaining int, overtime int) {
 
 	if e.isPaused {
 		if e.isOvertimePhaseLocked() {
-			return 0, 0
+			return 0, int(e.pausedOvertime.Round(time.Second) / time.Second)
 		}
 		if e.pausedLeft > 0 {
 			return int(e.pausedLeft.Round(time.Second) / time.Second), 0

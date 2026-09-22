@@ -459,7 +459,11 @@ func (a *App) Start() error {
 	}
 	if a.session != nil && a.session.Active() {
 		if snap.IsPaused {
-			a.session.Resume()
+			if snap.Phase == timer.PhaseTalk {
+				a.session.BeginTalk()
+			} else {
+				a.session.Resume()
+			}
 		} else if snap.Phase == timer.PhaseIdle || snap.Phase == timer.PhaseCompleted {
 			a.session.BeginTalk()
 		}
