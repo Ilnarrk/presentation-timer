@@ -135,11 +135,6 @@ func (a *App) startup(ctx context.Context) {
 	a.engine = timer.NewEngine(cfg)
 	a.reconcileAndPersistSoundSettings()
 	a.applyAudioSettings(a.settings.Get())
-	go func() {
-		if err := a.audio.Warmup(); err != nil {
-			runtime.LogErrorf(ctx, "audio warmup failed: %v", err)
-		}
-	}()
 
 	a.engine.SetCallbacks(
 		func(snapshot timer.Snapshot) {
@@ -173,6 +168,7 @@ func (a *App) shutdown(ctx context.Context) {
 	if a.conference != nil {
 		a.conference.Disconnect()
 	}
+	audio.ReleaseCOM()
 }
 
 func (a *App) GetAppInfo() buildinfo.Info {
@@ -230,6 +226,17 @@ func (a *App) SaveSettings(input settings.Settings) error {
 
 func (a *App) GetAudioDevices() ([]audio.Device, error) {
 	return audio.ListDevices()
+}
+
+func (a *App) WarmupAudio() {
+	go func() {
+		if a.audio == nil {
+			return
+		}
+		if err := a.audio.Warmup(); err != nil {
+			runtime.LogErrorf(a.ctx, "audio warmup failed: %v", err)
+		}
+	}()
 }
 
 func (a *App) GetSounds() []audio.Sound {

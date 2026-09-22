@@ -10,7 +10,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/go-ole/go-ole"
 	"github.com/moutend/go-wca/pkg/wca"
 )
 
@@ -21,8 +20,7 @@ func attachPlatformPlayback(player *Player) {
 }
 
 type localAudioOutput struct {
-	mu      sync.Mutex
-	comInit bool
+	mu sync.Mutex
 }
 
 func newLocalAudioOutput() *localAudioOutput {
@@ -207,14 +205,7 @@ func (s *wasapiSession) waitForDrain(ctx context.Context, timeout time.Duration)
 }
 
 func (o *localAudioOutput) initCOM() error {
-	if o.comInit {
-		return nil
-	}
-	if _, err := coInitializeMTA(); err != nil {
-		return err
-	}
-	o.comInit = true
-	return nil
+	return ensureCOMInitialized()
 }
 
 func wavFormat(wav []byte) (wca.WAVEFORMATEX, error) {
@@ -232,13 +223,3 @@ func wavFormat(wav []byte) (wca.WAVEFORMATEX, error) {
 	return format, nil
 }
 
-func coInitializeMTA() (needUninit bool, err error) {
-	err = ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
-	if err == nil {
-		return true, nil
-	}
-	if oleErr, ok := err.(*ole.OleError); ok && oleErr.Code() == 1 {
-		return false, nil
-	}
-	return false, err
-}

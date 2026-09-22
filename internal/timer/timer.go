@@ -332,13 +332,17 @@ func (e *Engine) evaluateLocked() {
 
 func (e *Engine) enterOvertimeLocked(overtime Phase, now time.Time) {
 	e.phase = overtime
-	e.overtimeStartedAt = now
+	if !e.deadline.IsZero() {
+		e.overtimeStartedAt = e.deadline
+	} else {
+		e.overtimeStartedAt = now
+	}
 	e.fireAlertLocked(now, false)
 }
 
 func (e *Engine) fireAlertLocked(now time.Time, repeated bool) {
 	e.lastAlertAt = now
-	e.reminderDueAt = now.Add(e.cfg.ReminderInterval)
+	e.scheduleNextReminderLocked(now)
 	e.alertActive = true
 	if e.onAlert != nil {
 		event := AlertEvent{Phase: e.phase, Repeated: repeated}
@@ -346,6 +350,20 @@ func (e *Engine) fireAlertLocked(now time.Time, repeated bool) {
 		e.onAlert(event)
 		e.mu.Lock()
 	}
+}
+
+func (e *Engine) scheduleNextReminderLocked(now time.Time) {
+	if e.overtimeStartedAt.IsZero() {
+		e.reminderDueAt = time.Time{}
+		return
+	}
+	elapsed := now.Sub(e.overtimeStartedAt)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	interval := e.cfg.ReminderInterval
+	nextBoundary := ((elapsed / interval) + 1) * interval
+	e.reminderDueAt = e.overtimeStartedAt.Add(nextBoundary)
 }
 
 func normalizeConfig(cfg Config) Config {

@@ -149,3 +149,7 @@ export function Start() {
 export function TestConferenceSound(arg1) {
   return window['go']['main']['App']['TestConferenceSound'](arg1);
 }
+
+export function WarmupAudio() {
+  return window['go']['main']['App']['WarmupAudio']();
+}

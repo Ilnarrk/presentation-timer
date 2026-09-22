@@ -5,15 +5,13 @@ package audio
 import (
 	"fmt"
 
-	"github.com/go-ole/go-ole"
 	"github.com/moutend/go-wca/pkg/wca"
 )
 
 func ListDevices() ([]Device, error) {
-	if err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED); err != nil {
+	if err := ensureCOMInitialized(); err != nil {
 		return nil, err
 	}
-	defer ole.CoUninitialize()
 
 	var enumerator *wca.IMMDeviceEnumerator
 	if err := wca.CoCreateInstance(wca.CLSID_MMDeviceEnumerator, 0, wca.CLSCTX_ALL, wca.IID_IMMDeviceEnumerator, &enumerator); err != nil {

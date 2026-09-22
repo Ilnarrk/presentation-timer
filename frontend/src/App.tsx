@@ -38,6 +38,7 @@ import {
   SetConferenceCameraEnabled,
   Start,
   TestConferenceSound,
+  WarmupAudio,
 } from '../wailsjs/go/main/App';
 import {
   EventsOn,
@@ -145,15 +146,18 @@ function formatOvertime(totalSeconds: number): string {
   return `+${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
-function getWidgetStatusLabel(phase: Phase, durationOpen: boolean, isTicking: boolean): string {
-  if (durationOpen) {
+function getWidgetStatusLabel(phase: Phase, reglamentSelected: boolean, isRunning: boolean): string {
+  if (reglamentSelected) {
     return 'Регламент';
+  }
+  if (isRunning && (phase === 'talk' || phase === 'talkOvertime')) {
+    return 'Доклад';
   }
   if (phase === 'questions' || phase === 'questionsOvertime') {
     return 'Обсуждение';
   }
-  if (isTicking && (phase === 'talk' || phase === 'talkOvertime')) {
-    return 'Доклад';
+  if (phase === 'completed') {
+    return phaseLabels.completed;
   }
   return 'Регламент';
 }
@@ -398,6 +402,10 @@ function SettingsLockBanner({ message }: { message: string }) {
 
 function formatAppError(err: unknown): string {
   const raw = String(err).replace(/^Error:\s*/i, '');
+  const lower = raw.toLowerCase();
+  if (lower.includes('неправильная функция') || lower.includes('invalid function')) {
+    return 'Не удалось инициализировать аудио. Перезапустите приложение или проверьте звуковое устройство.';
+  }
   switch (raw) {
     case 'duration must be greater than zero':
       return 'Длительность должна быть больше нуля';
@@ -406,6 +414,14 @@ function formatAppError(err: unknown): string {
     default:
       return raw;
   }
+}
+
+function settledValue<T>(result: PromiseSettledResult<T>, fallback: T): T {
+  return result.status === 'fulfilled' ? result.value : fallback;
+}
+
+function settledError(result: PromiseSettledResult<unknown>): string | null {
+  return result.status === 'rejected' ? formatAppError(result.reason) : null;
 }
 
 function PanelError({ message }: { message: string }) {
@@ -461,6 +477,7 @@ function App() {
   const [conferenceState, setConferenceState] = useState<ConferenceState>(initialConferenceState);
   const [conferenceBusy, setConferenceBusy] = useState(false);
   const [settingsError, setSettingsError] = useState('');
+  const [audioDevicesError, setAudioDevicesError] = useState('');
   const [sessionError, setSessionError] = useState('');
   const [conferenceError, setConferenceError] = useState('');
   const [widgetDurationError, setWidgetDurationError] = useState('');
@@ -515,6 +532,7 @@ function App() {
   const [widgetColorPreviewKey, setWidgetColorPreviewKey] = useState<WidgetColorKey | null>(null);
   const [widgetMode, setWidgetMode] = useState(false);
   const [widgetDurationOpen, setWidgetDurationOpen] = useState(false);
+  const [widgetReglamentSelected, setWidgetReglamentSelected] = useState(false);
   const [widgetDurationDraft, setWidgetDurationDraft] = useState('10');
   const [widgetDurationCustomOpen, setWidgetDurationCustomOpen] = useState(false);
   const [widgetDurationInvalid, setWidgetDurationInvalid] = useState(false);
@@ -673,110 +691,150 @@ function App() {
     widgetQuickPresets,
   ]);
 
+  const loadAudioDevices = useCallback(async () => {
+    try {
+      const nextDevices = await GetAudioDevices();
+      setDevices(nextDevices as AudioDevice[]);
+      setAudioDevicesError('');
+    } catch (err) {
+      setAudioDevicesError(formatAppError(err));
+    }
+  }, []);
+
   useEffect(() => {
     const bootstrap = async () => {
       try {
-      const [
-        initialState,
-        initialSettings,
-        initialSounds,
-        initialDevices,
-        initialConference,
-        initialAppInfo,
-        initialSessionTemplate,
-        initialSessionState,
-        settingsStorageError,
-      ] = await Promise.all([
-        GetState(),
-        GetSettings(),
-        GetSounds(),
-        GetAudioDevices(),
-        GetConferenceState(),
-        GetAppInfo(),
-        GetSessionTemplate(),
-        GetSessionState(),
-        GetSettingsStorageError(),
-      ]);
+        const [
+          stateResult,
+          settingsResult,
+          soundsResult,
+          devicesResult,
+          conferenceResult,
+          appInfoResult,
+          sessionTemplateResult,
+          sessionStateResult,
+          storageErrorResult,
+        ] = await Promise.allSettled([
+          GetState(),
+          GetSettings(),
+          GetSounds(),
+          GetAudioDevices(),
+          GetConferenceState(),
+          GetAppInfo(),
+          GetSessionTemplate(),
+          GetSessionState(),
+          GetSettingsStorageError(),
+        ]);
 
-      const hydratedSettings = settings.Settings.createFrom(initialSettings);
-      lastSettingsRef.current = hydratedSettings;
-      settingsLoadedRef.current = true;
+        const bootstrapErrors: string[] = [];
+        const settingsErrorMessage = settledError(settingsResult);
+        if (settingsErrorMessage) bootstrapErrors.push(settingsErrorMessage);
+        const soundsErrorMessage = settledError(soundsResult);
+        if (soundsErrorMessage) bootstrapErrors.push(soundsErrorMessage);
+        const devicesErrorMessage = settledError(devicesResult);
+        if (devicesErrorMessage) setAudioDevicesError(devicesErrorMessage);
 
-      setSnapshot(initialState as TimerSnapshot);
-      setTalkMinutes(initialSettings.talkMinutes);
-      setTalkSecondsPart(initialSettings.talkSeconds);
-      setQuestionsMinutes(initialSettings.questionsMinutes);
-      setQuestionsSecondsPart(initialSettings.questionsSeconds);
-      setReminderMinutes(initialSettings.reminderMinutes);
-      setReminderSecondsPart(initialSettings.reminderSeconds);
-      const availableSounds = initialSounds as SoundOption[];
-      const soundIds = new Set(availableSounds.map((sound) => sound.id));
-      const resolvedSoundId = initialSettings.soundId && soundIds.has(initialSettings.soundId)
-        ? initialSettings.soundId
-        : (availableSounds.find((sound) => sound.id.endsWith('alert.mp3') || sound.label === 'alert')?.id ?? availableSounds[0]?.id ?? '');
-      setSoundId(resolvedSoundId);
-      setReminderSoundId(initialSettings.reminderSoundId && soundIds.has(initialSettings.reminderSoundId) ? initialSettings.reminderSoundId : '');
-      setQuestionsSoundId(initialSettings.questionsSoundId && soundIds.has(initialSettings.questionsSoundId) ? initialSettings.questionsSoundId : '');
-      setNextSoundId(initialSettings.nextSoundId && soundIds.has(initialSettings.nextSoundId) ? initialSettings.nextSoundId : '');
-      setDeviceId(initialSettings.deviceId);
-      setVolume(initialSettings.volume);
-      setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
-      setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
-      setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? true);
-      setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
-      setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
-      setTimerFont((initialSettings.timerFont as TimerFont) || DEFAULT_TIMER_FONT_ID);
-      setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'free');
-      setAppTheme((initialSettings.appTheme as AppTheme) || 'dark');
-      setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'transparent');
-      setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
-      setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, initialSettings.widgetBackgroundTransparency ?? 0)));
-      setWidgetColors({
-        widgetColorIdle: initialSettings.widgetColorIdle ?? '',
-        widgetColorRunning: initialSettings.widgetColorRunning ?? '',
-        widgetColorPaused: initialSettings.widgetColorPaused ?? '',
-        widgetColorOvertime: initialSettings.widgetColorOvertime ?? '',
-      });
-      setWidgetQuickPresets(normalizeWidgetQuickPresets(initialSettings.widgetQuickPresets));
-      setWidgetMode(await IsWidgetMode());
-      setSounds(initialSounds as SoundOption[]);
-      setDevices(initialDevices as AudioDevice[]);
-      const conference = initialConference as ConferenceState;
-      setConferenceState(conference);
-      setRecentConferences(loadRecentConferences());
-      setAppInfo(buildinfo.Info.createFrom(initialAppInfo));
-      const template = session.Template.createFrom(initialSessionTemplate);
-      const fields = applySessionTemplateFields(template);
-      setSessionTotalHours(fields.sessionTotalHours);
-      setSessionTotalMinutes(fields.sessionTotalMinutes);
-      setSessionSpeakerCount(fields.sessionSpeakerCount);
-      setSessionSpeakerNames(fields.sessionSpeakerNames);
-      setSessionTalkMinutes(fields.sessionTalkMinutes);
-      setSessionTalkSeconds(fields.sessionTalkSeconds);
-      setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
-      setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
-      setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
-      setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
-      setSessionState(initialSessionState as SessionState);
-      if (!isConferenceActive(conference.phase)) {
-        setConferenceWizardStep(1);
-        setConnectionPromptOpen(true);
-      } else {
-        setConferenceWizardStep(wizardStepForOpen(conference.phase));
-      }
-      if (settingsStorageError) {
-        setSettingsError(settingsStorageError);
-      }
+        const initialState = settledValue(stateResult, null as TimerSnapshot | null);
+        const initialSettings = settledValue(settingsResult, null as settings.Settings | null);
+        const initialSounds = settledValue(soundsResult, [] as SoundOption[]);
+        const initialDevices = settledValue(devicesResult, [] as AudioDevice[]);
+        const initialConference = settledValue(conferenceResult, initialConferenceState);
+        const initialAppInfo = settledValue(appInfoResult, buildinfo.Info.createFrom({ name: '', version: '' }));
+        const initialSessionTemplate = settledValue(sessionTemplateResult, session.Template.createFrom({}));
+        const loadedSessionState = settledValue(sessionStateResult, session.State.createFrom(initialSessionState));
+        const settingsStorageError = settledValue(storageErrorResult, '');
+
+        if (initialState) {
+          setSnapshot(initialState);
+        }
+        if (initialSettings) {
+          const hydratedSettings = settings.Settings.createFrom(initialSettings);
+          lastSettingsRef.current = hydratedSettings;
+          settingsLoadedRef.current = true;
+
+          setTalkMinutes(initialSettings.talkMinutes);
+          setTalkSecondsPart(initialSettings.talkSeconds);
+          setQuestionsMinutes(initialSettings.questionsMinutes);
+          setQuestionsSecondsPart(initialSettings.questionsSeconds);
+          setReminderMinutes(initialSettings.reminderMinutes);
+          setReminderSecondsPart(initialSettings.reminderSeconds);
+          const availableSounds = initialSounds as SoundOption[];
+          const soundIds = new Set(availableSounds.map((sound) => sound.id));
+          const resolvedSoundId = initialSettings.soundId && soundIds.has(initialSettings.soundId)
+            ? initialSettings.soundId
+            : (availableSounds.find((sound) => sound.id.endsWith('alert.mp3') || sound.label === 'alert')?.id ?? availableSounds[0]?.id ?? '');
+          setSoundId(resolvedSoundId);
+          setReminderSoundId(initialSettings.reminderSoundId && soundIds.has(initialSettings.reminderSoundId) ? initialSettings.reminderSoundId : '');
+          setQuestionsSoundId(initialSettings.questionsSoundId && soundIds.has(initialSettings.questionsSoundId) ? initialSettings.questionsSoundId : '');
+          setNextSoundId(initialSettings.nextSoundId && soundIds.has(initialSettings.nextSoundId) ? initialSettings.nextSoundId : '');
+          setDeviceId(initialSettings.deviceId);
+          setVolume(initialSettings.volume);
+          setMuteConferenceSound(initialSettings.muteConferenceSound ?? false);
+          setMuteConferenceReceive(initialSettings.muteConferenceReceive ?? true);
+          setConferenceCameraEnabled(initialSettings.conferenceCameraEnabled ?? true);
+          setTimerScalePercent(initialSettings.timerScalePercent || DEFAULT_TIMER_SCALE);
+          setTimerDisplayMode((initialSettings.timerDisplayMode as TimerDisplayMode) || 'ring');
+          setTimerFont((initialSettings.timerFont as TimerFont) || DEFAULT_TIMER_FONT_ID);
+          setWidgetPlacement((initialSettings.widgetPlacement as WidgetPlacement) || 'free');
+          setAppTheme((initialSettings.appTheme as AppTheme) || 'dark');
+          setWidgetTheme((initialSettings.widgetTheme as WidgetTheme) || 'transparent');
+          setWidgetShape((initialSettings.widgetShape as WidgetShape) || 'rounded');
+          setWidgetBackgroundTransparency(Math.min(MAX_WIDGET_BACKGROUND_TRANSPARENCY, Math.max(MIN_WIDGET_BACKGROUND_TRANSPARENCY, initialSettings.widgetBackgroundTransparency ?? 0)));
+          setWidgetColors({
+            widgetColorIdle: initialSettings.widgetColorIdle ?? '',
+            widgetColorRunning: initialSettings.widgetColorRunning ?? '',
+            widgetColorPaused: initialSettings.widgetColorPaused ?? '',
+            widgetColorOvertime: initialSettings.widgetColorOvertime ?? '',
+          });
+          setWidgetQuickPresets(normalizeWidgetQuickPresets(initialSettings.widgetQuickPresets));
+        }
+
+        setSounds(initialSounds as SoundOption[]);
+        setDevices(initialDevices as AudioDevice[]);
+        const conference = initialConference as ConferenceState;
+        setConferenceState(conference);
+        setRecentConferences(loadRecentConferences());
+        setAppInfo(buildinfo.Info.createFrom(initialAppInfo));
+        const template = session.Template.createFrom(initialSessionTemplate);
+        const fields = applySessionTemplateFields(template);
+        setSessionTotalHours(fields.sessionTotalHours);
+        setSessionTotalMinutes(fields.sessionTotalMinutes);
+        setSessionSpeakerCount(fields.sessionSpeakerCount);
+        setSessionSpeakerNames(fields.sessionSpeakerNames);
+        setSessionTalkMinutes(fields.sessionTalkMinutes);
+        setSessionTalkSeconds(fields.sessionTalkSeconds);
+        setSessionQuestionsMinutes(fields.sessionQuestionsMinutes);
+        setSessionQuestionsSeconds(fields.sessionQuestionsSeconds);
+        setSessionUseDefaultTalk(fields.sessionUseDefaultTalk);
+        setSessionUseDefaultQuestions(fields.sessionUseDefaultQuestions);
+        setSessionState(loadedSessionState as SessionState);
+        if (!isConferenceActive(conference.phase)) {
+          setConferenceWizardStep(1);
+          setConnectionPromptOpen(true);
+        } else {
+          setConferenceWizardStep(wizardStepForOpen(conference.phase));
+        }
+        if (settingsStorageError) {
+          bootstrapErrors.push(settingsStorageError);
+        }
+        if (bootstrapErrors.length > 0) {
+          setSettingsError(bootstrapErrors.join('; '));
+        }
+        setWidgetMode(await IsWidgetMode());
       } finally {
         setSettingsBootstrapComplete(true);
+        WarmupAudio();
       }
     };
 
-    bootstrap().catch((err) => {
-      setSettingsError(formatAppError(err));
-      setSettingsBootstrapComplete(true);
-    });
+    void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen || settingsTab !== 'sound' || settingsLocked) return;
+    if (devices.length > 0 && !audioDevicesError) return;
+    void loadAudioDevices();
+  }, [settingsOpen, settingsTab, settingsLocked, devices.length, audioDevicesError, loadAudioDevices]);
 
   useEffect(() => {
     if (widgetMode) {
@@ -939,12 +997,8 @@ function App() {
   }, [snapshot]);
 
   const widgetStatusLabel = useMemo(
-    () => getWidgetStatusLabel(
-      snapshot.phase,
-      widgetDurationOpen,
-      snapshot.isRunning && !snapshot.isPaused,
-    ),
-    [snapshot.phase, snapshot.isRunning, snapshot.isPaused, widgetDurationOpen],
+    () => getWidgetStatusLabel(snapshot.phase, widgetReglamentSelected, snapshot.isRunning),
+    [snapshot.phase, snapshot.isRunning, widgetReglamentSelected],
   );
 
   const widgetDurationSeconds = snapshot.talkSeconds;
@@ -959,6 +1013,7 @@ function App() {
 
   const handleStart = async () => {
     closeWidgetDuration();
+    setWidgetReglamentSelected(false);
     try {
       if (settingsLoadedRef.current) {
         await persistSettings();
@@ -970,11 +1025,13 @@ function App() {
   };
 
   const handleReset = () => {
+    setWidgetReglamentSelected(false);
     Reset();
   };
 
   const handleGoToQuestions = async () => {
     closeWidgetDuration();
+    setWidgetReglamentSelected(false);
     try {
       await GoToQuestions();
     } catch {
@@ -984,6 +1041,7 @@ function App() {
 
   const handleNextSpeaker = async () => {
     closeWidgetDuration();
+    setWidgetReglamentSelected(false);
     try {
       await NextSpeaker();
     } catch {
@@ -1030,13 +1088,17 @@ function App() {
       setWidgetDurationInvalid(true);
       return;
     }
+    const nextDurationSeconds = durationPresetTotal(parsed);
     try {
       await SetTalkDurationOverride(parsed.minutes, parsed.seconds);
       setTalkMinutes(parsed.minutes);
       setTalkSecondsPart(parsed.seconds);
-      setWidgetDurationDraft(formatDurationDraft(durationPresetTotal(parsed)));
+      setWidgetDurationDraft(formatDurationDraft(nextDurationSeconds));
       setWidgetDurationInvalid(false);
       await persistSettings({ talkMinutes: parsed.minutes, talkSeconds: parsed.seconds });
+      if (nextDurationSeconds !== widgetDurationSeconds) {
+        setWidgetReglamentSelected(true);
+      }
       if (!keepOpen) closeWidgetDuration();
       setWidgetDurationError('');
     } catch (err) {
@@ -2243,6 +2305,7 @@ function App() {
 
             <div className="settings-section" id="settings-panel-sound" role="tabpanel" aria-labelledby="settings-tab-sound" hidden={settingsTab !== 'sound'}>
               <h3>Звук</h3>
+              {audioDevicesError && <PanelError message={audioDevicesError} />}
               <label>Сигнал окончания времени<div className="sound-picker-row">
                 <select value={soundId} disabled={settingsLocked} onChange={async (e) => { const next = e.target.value; setSoundId(next); await persistSettings({ soundId: next }); }}>
                   {sounds.map((sound) => <option key={sound.id} value={sound.id}>{sound.label}</option>)}

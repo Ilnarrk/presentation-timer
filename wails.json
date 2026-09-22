@@ -5,10 +5,10 @@
     "companyName": "Presentation Timer",
     "copyright": "Copyright 2026",
     "productName": "Таймер докладов",
-    "productVersion": "0.2.6"
+    "productVersion": "0.2.7"
   },
   "name": "presentation-timer",
-  "outputfilename": "presentation-timer-0.2.6.exe",
+  "outputfilename": "presentation-timer-0.2.7.exe",
   "preBuildHooks": {
     "*/*": "go run ../sync_app_config.go"
   }

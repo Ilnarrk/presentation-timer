@@ -81,3 +81,5 @@ export function SetWidgetQuickTimeOpen(arg1:boolean):Promise<void>;
 export function Start():Promise<void>;
 
 export function TestConferenceSound(arg1:string):Promise<void>;
+
+export function WarmupAudio():Promise<void>;
