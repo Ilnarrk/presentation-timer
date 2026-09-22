@@ -10,6 +10,13 @@ import (
 func TestConcurrentListDevicesAndWarmup(t *testing.T) {
 	player := NewPlayer(NewMemoryCatalog(nil))
 
+	if _, err := ListDevices(); err != nil {
+		t.Skipf("audio devices unavailable: %v", err)
+	}
+	if err := player.Warmup(); err != nil {
+		t.Skipf("audio warmup unavailable: %v", err)
+	}
+
 	var wg sync.WaitGroup
 	errs := make(chan error, 8)
 	for i := 0; i < 4; i++ {
